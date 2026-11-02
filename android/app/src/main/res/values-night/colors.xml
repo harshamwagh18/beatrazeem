@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="beatrazeem_background">#121216</color>
+    <color name="beatrazeem_secondary_background">#1E1E24</color>
+    <color name="beatrazeem_accent">#7C3AED</color>
+    <color name="beatrazeem_secondary_accent">#DDD6FE</color>
+    <color name="beatrazeem_text">#F4F4F5</color>
+    <color name="beatrazeem_secondary_text">#A1A1AA</color>
+</resources>
