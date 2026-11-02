@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:beatrazeem/main.dart';
 import 'package:beatrazeem/core/protocol.dart';
 import 'host_microphone_test.dart'
-    show TestRoom, TestAudio, TestDiscovery, TestProfileStore;
+    show TestPrivacyStore, TestRoom, TestAudio, TestDiscovery, TestProfileStore;
 
 void main() {
   testWidgets(
@@ -27,6 +27,7 @@ void main() {
       await tester.pumpWidget(
         BeatrazeemApp(
           studio: Studio(
+            privacyStore: TestPrivacyStore(),
             room: room,
             audio: audio,
             discovery: TestDiscovery(),

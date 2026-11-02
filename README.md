@@ -1,17 +1,28 @@
-# Beatrazeem — Android app, v0.8.2 development build
+# Beatrazeem — Android app, v0.9.0 privacy and security development build
 
 Beatrazeem creates nearby listening rooms with a **6-digit code**. There is no website, account, upload form, or cloud audio storage in this app.
 
 ## Use it
 
-1. Install Beatrazeem 0.8.1 on every device. Turn on the creator phone’s hotspot in Android settings and connect every listener to that hotspot. Enter a username once. It is saved on that phone; later launches open the home screen directly.
+1. Install Beatrazeem 0.9.0 on every device. Review and accept the privacy notice; children and people requiring a lawful guardian need an operator-signed approval after verification. Turn on the creator phone’s hotspot in Android settings and connect every listener to that hotspot. Enter a username once. It is saved on that phone; later launches open the home screen directly.
 2. On the creator, select **Host**, enter a room name, and tap **Create a room**. Share the six digits shown on screen.
-3. On listeners, select **Join**, enter those digits, and tap **Join room**. The room name and live member list appear on every updated phone.
+3. On listeners, select **Join**, enter those digits, and tap **Join room**. Compare the separate security code on the creator and listener phones, then approve on both. The room name and live member list appear on every updated phone.
 4. The creator selects **Microphone**, **App audio**, or **Karaoke**, then starts sharing.
 5. Connect each device to a speaker using the operating system's Bluetooth, cable, or audio-output settings.
 6. Use **Test room speakers** and **Adjust speaker timing** to compare outputs. The test stops an active sharing session; start sharing again afterward. Listener apps must remain open.
 
 There can be one creator and up to eight listeners. Rooms end when the creator leaves or the app process stops. Guest Wi-Fi, AP isolation, VPNs, and some hotspots may block nearby discovery.
+
+## Privacy and security update — 0.9.0
+
+- **Privacy & your data** is available from the shield icon. It includes the full notice, local data summary, access/correction/erasure/nomination/complaint request drafts, and withdrawal with local deletion.
+- The responsible operator/contact are **gamelauncher** and **gamelauncher223@gmail.com**. Requests are sent only when users review and send the email themselves.
+- All users, including existing profiles, must accept the current notice before creating or joining rooms. Consent receipts are stored locally; failed writes keep entry blocked.
+- Children and people needing lawful-guardian consent use an approval signed by the operator after actual verification. The app validates the phone reference, notice version, signature and expiry. This is an enforcement mechanism for a manual verification process; no automated identity-verification service is connected.
+- Withdrawing stops input/output, closes the room and erases the local profile, receipt and guardian reference. A failed erase is reported with retry/Android clear-storage instructions. Configured cloud/device backups exclude app data.
+- Personal room data is encrypted with X25519/HKDF/AES-GCM after both phones confirm matching security codes. Clock messages are authenticated; tampered and replayed messages are rejected. The six-digit discovery code is retained. Update all phones; protocol v3 does not fall back to plaintext rooms.
+
+**This is a tested development update, not a legal-compliance certificate or production approval.** The operator must actually run guardian verification, handle privacy/grievance requests, resolve offline guardian revocation and applicable retention obligations, and establish effective breach-notification delivery. Physical-device and independent security reviews remain necessary. See [change locations](docs/PRIVACY_CHANGELOG.md), [operator procedures and remaining obligations](docs/PRIVACY_OPERATIONS.md), [notice archive](docs/PRIVACY_NOTICE.md), and [validation](docs/VALIDATION.md).
 
 ## New in 0.8.1: Continuous app audio and a simpler delay display
 
@@ -21,7 +32,7 @@ There can be one creator and up to eight listeners. Rooms end when the creator l
 - Bursts of captured audio now wait in a bounded per-listener queue for delivery credit. Previously, a ninth unacknowledged packet was discarded even when its playback time was still in the future. Expired audio is discarded so a stalled connection cannot accumulate an ever-growing delay.
 - Output interruptions and route changes reanchor playback automatically, including short interruptions that previously took seconds to catch up.
 - The shared target buffer remains **200 ms**, using **20 ms packets**. This update fixes continuity and timing behavior without reducing the buffer further.
-- Install **0.8.1 on every phone** and recreate the room. Saved profiles remain intact during a normal update.
+- Install **0.9.0 on every phone** and recreate the room. Saved profiles remain intact during a normal update.
 
 Live delay is estimated from capture and speaker timestamps, not an acoustic measurement. Unavailable or stale timing shows **Measuring…**; Bluetooth may add unreported delay. The delay preview uses an illustrative value, not a measured phone result.
 
@@ -29,7 +40,7 @@ Live delay is estimated from capture and speaker timestamps, not an acoustic mea
 
 - The creator can provide the hotspot. Listeners look up the room directly through their Wi-Fi gateway using the six-digit code, so hotspot joining no longer depends on multicast discovery. Normal shared-Wi-Fi discovery remains available as a fallback.
 - Listener networking is bound to the selected Wi-Fi network while joining and listening, including a hotspot without internet access. The binding and Wi-Fi performance lock are released on leaving, failure, or disconnection. The creator does not need to connect to a listener's hotspot.
-- Clock checks use a separate UDP path every 250 ms so queued audio does not delay them. Older rooms or networks that block UDP retain the existing TCP clock fallback.
+- Clock checks use a separate UDP path every 250 ms so queued audio does not delay them. Networks that block authenticated UDP use the encrypted TCP clock fallback. Older app versions are rejected.
 - Speaker timestamps are checked every second once established, with rate estimates fitted over a longer window. Playback follows the measured speaker sample rate; expired timestamps fall back to an estimate and route changes reset the measurement.
 - App-audio and Karaoke capture use Android recorder frame timestamps when available, with a continuous sample-position fallback. Delayed reads retain their original age and expired audio is dropped instead of building up lag.
 - Each updated listener can have at most eight unacknowledged packets plus ten unsent 20 ms packets (at most 200 ms of unsent audio). Acknowledgements release delivery credit; expired packets and excess oldest unsent packets are discarded. Each listener is handled independently.
@@ -93,7 +104,7 @@ The room identity features from 0.2.0 are retained:
 - A required room name for creators, displayed to everyone in the room.
 - A live **In this room** member list with initials, creator labels, and a **(you)** indicator. Joining, leaving, and manually rejoining update the list.
 
-Usernames are limited to 24 characters and room names to 36. Usernames are saved display names, not verified accounts, and are shared with the connected room. Room names last for the room session. Duplicate names are allowed; each connection has its own identity. Update all phones to 0.8.1 for creator-hotspot discovery, bounded audio queues, saved profiles, and live name changes. Older listeners can appear as “Listener.”
+Usernames are limited to 24 characters and room names to 36. Usernames are saved display names, not verified accounts, and are shared with the connected room. Room names last for the room session. Duplicate names are allowed; each connection has its own identity. Update all phones to 0.9.0 for creator-hotspot discovery, bounded audio queues, saved profiles, and live name changes. Older versions must update before joining encrypted rooms.
 
 Room codes, host microphone routing, and the Android output scheduling and room-clock improvements from 0.5.0 are retained. Automatic reconnection is not included; use Join again after a connection is lost.
 
@@ -132,7 +143,7 @@ This is an early development build, not a production release. Building source is
 
 **Zero lag is impossible to promise.** Listeners use a shared buffer to absorb network jitter. Software scheduling, audio hardware, and Bluetooth add latency. The creator's original app audio is not delayed by Beatrazeem and can be heard earlier than receivers. A video on the creator may not lip-sync with the remote audio. Physical device synchronization has not been measured here.
 
-**Local-network rooms only.** A six-digit code does not connect devices over the internet. Network discovery exposes the room code locally. Audio travels over local unencrypted WebSocket connections, so use a trusted LAN. The code identifies a nearby room; it is not a security credential. There is no recording or file upload feature.
+**Local-network rooms only.** A six-digit code does not connect devices over the internet. Network discovery exposes the room code locally. Names, room information and audio travel inside authenticated encrypted messages after mutual security-code verification. Discovery and traffic metadata remain visible on the local network. The code identifies a nearby room; it is not a security credential. There is no recording or file upload feature.
 
 **Keep listener apps open.** Mobile background listening is not configured. Android app-audio sharing and Karaoke use a foreground service while another app plays. Karaoke keeps the microphone active until sharing stops; microphone-only mode pauses when Beatrazeem is backgrounded. Output routing follows the system. Bluetooth behavior depends on the phone and speaker.
 
@@ -199,7 +210,7 @@ The included CI workflow checks and builds the Android app. No CI run has been t
 
 `android/.../MainActivity.kt`: the profile channel reads and commits private Android preferences on a background executor; the UI acknowledges a save only after the write completes.
 
-PCM is 48 kHz, mono, 16-bit (about 96 KB/s per listener before transport overhead). Audio uses 20 ms network blocks and continuous native Android output in 10 ms render blocks. This favors a simple inspectable prototype; a production release should use an efficient codec, encrypted authenticated transport, wider device coverage for output timestamps and drift correction, background audio, reconnection, and multi-device acoustic calibration.
+PCM is 48 kHz, mono, 16-bit (about 96 KB/s per listener before transport overhead). Audio uses 20 ms network blocks and continuous native Android output in 10 ms render blocks. This favors a simple inspectable prototype; a production release should use an efficient codec, an independent audit of encrypted transport, wider device coverage for output timestamps and drift correction, background audio, reconnection, and multi-device acoustic calibration.
 
 ## Timing adjustment update — 0.8.2
 

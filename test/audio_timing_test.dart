@@ -7,7 +7,7 @@ import 'package:beatrazeem/audio/audio_timing.dart';
 import 'package:beatrazeem/ui/delay_panel.dart';
 import 'package:beatrazeem/ui/design.dart';
 import 'host_microphone_test.dart'
-    show TestRoom, TestAudio, TestDiscovery, TestProfileStore;
+    show TestPrivacyStore, TestRoom, TestAudio, TestDiscovery, TestProfileStore;
 
 class TimingAudio extends TestAudio {
   AudioTiming nextTiming = const AudioTiming(
@@ -39,6 +39,7 @@ void main() {
       await tester.pumpWidget(
         BeatrazeemApp(
           studio: Studio(
+            privacyStore: TestPrivacyStore(),
             room: room,
             audio: audio,
             discovery: TestDiscovery(),

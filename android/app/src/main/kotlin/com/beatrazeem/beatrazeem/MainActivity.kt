@@ -2,6 +2,8 @@ package com.beatrazeem.beatrazeem
 
 import android.app.Activity
 import android.content.Intent
+import android.content.ActivityNotFoundException
+import android.net.Uri
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.projection.MediaProjectionManager
@@ -14,6 +16,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
+import java.util.UUID
 
 class MainActivity : FlutterActivity() {
     private var output: SynchronizedAudioPlayer? = null
@@ -38,7 +41,7 @@ class MainActivity : FlutterActivity() {
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "beatrazeem/profile")
             .setMethodCallHandler { call, result ->
-                if (call.method != "readUsername" && call.method != "saveUsername") {
+                if (call.method !in setOf("readUsername", "saveUsername", "deleteUsername")) {
                     result.notImplemented()
                 } else {
                     profileIo.execute {
@@ -47,6 +50,9 @@ class MainActivity : FlutterActivity() {
                             if (call.method == "readUsername") {
                                 val name = preferences.getString("username", null)
                                 main.post { result.success(name) }
+                            } else if (call.method == "deleteUsername") {
+                                check(preferences.edit().remove("username").commit()) { "Could not delete your username. Please try again." }
+                                main.post { result.success(null) }
                             } else {
                                 val name = call.arguments as? String ?: error("A username is required.")
                                 require(name.isNotBlank() && name.codePointCount(0, name.length) <= 24) { "Choose a username of 1–24 characters." }
@@ -56,6 +62,87 @@ class MainActivity : FlutterActivity() {
                             }
                         } catch (error: Exception) {
                             main.post { result.error("profile", error.message ?: "Could not access your profile.", null) }
+                        }
+                    }
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "beatrazeem/privacy")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "composeEmail") {
+                    try {
+                        val to = call.argument<String>("to") ?: error("An email address is required.")
+                        val subject = call.argument<String>("subject") ?: ""
+                        val body = call.argument<String>("body") ?: ""
+                        require(to.length <= 254 && to.matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")) &&
+                            subject.length <= 200 && body.length <= 32768) { "The email draft is invalid." }
+                        val uri = Uri.parse("mailto:${Uri.encode(to, "@")}?subject=${Uri.encode(subject)}&body=${Uri.encode(body)}")
+                        startActivity(Intent(Intent.ACTION_SENDTO, uri))
+                        result.success(true)
+                    } catch (_: ActivityNotFoundException) {
+                        result.success(false)
+                    } catch (error: Exception) {
+                        result.error("privacy", error.message ?: "Could not open an email draft.", null)
+                    }
+                } else if (call.method !in setOf("readConsent", "saveConsent", "deleteAll", "readApprovalRequestId", "getOrCreateApprovalRequestId")) {
+                    result.notImplemented()
+                } else {
+                    profileIo.execute {
+                        try {
+                            // One file and one serialized writer prevent consent
+                            // and username deletion from being partially applied.
+                            val preferences = getSharedPreferences("com.beatrazeem.beatrazeem.profile", MODE_PRIVATE)
+                            when (call.method) {
+                                "readConsent" -> {
+                                    val version = preferences.getString("privacyNoticeVersion", null)
+                                    val value = if (version == null) null else {
+                                        val acceptedAt = preferences.getLong("privacyAcceptedAt", 0L)
+                                        val adult = preferences.getBoolean("privacyAdultConfirmed", false)
+                                        val guardian = preferences.getString("privacyGuardianApproval", null)
+                                        check(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) && acceptedAt > 0 &&
+                                            (if (adult) guardian == null else !guardian.isNullOrBlank() && guardian.length <= 8192)) {
+                                            "The saved privacy choice is invalid."
+                                        }
+                                        mapOf("noticeVersion" to version, "acceptedAtEpochMs" to acceptedAt, "adultConfirmed" to adult,
+                                            "guardianApproval" to guardian)
+                                    }
+                                    main.post { result.success(value) }
+                                }
+                                "saveConsent" -> {
+                                    val version = call.argument<String>("noticeVersion") ?: error("A privacy notice version is required.")
+                                    val adult = call.argument<Boolean>("adultConfirmed") == true
+                                    val guardian = call.argument<String>("guardianApproval")
+                                    require(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) &&
+                                        (if (adult) guardian == null else !guardian.isNullOrBlank() && guardian.length <= 8192 &&
+                                            preferences.contains("privacyApprovalRequestId"))) {
+                                        "Confirm adult eligibility or provide verified guardian approval."
+                                    }
+                                    check(preferences.edit()
+                                        .putString("privacyNoticeVersion", version)
+                                        .putLong("privacyAcceptedAt", System.currentTimeMillis())
+                                        .putBoolean("privacyAdultConfirmed", adult)
+                                        .putString("privacyGuardianApproval", guardian)
+                                        .commit()) { "Could not save your privacy choice. Please try again." }
+                                    main.post { result.success(null) }
+                                }
+                                "deleteAll" -> {
+                                    // No erased consent receipt is retained.
+                                    check(preferences.edit().clear().commit()) { "Could not delete your saved data. Please try again." }
+                                    main.post { result.success(null) }
+                                }
+                                "readApprovalRequestId", "getOrCreateApprovalRequestId" -> {
+                                    var requestId = preferences.getString("privacyApprovalRequestId", null)
+                                    if (requestId == null && call.method == "getOrCreateApprovalRequestId") {
+                                        requestId = UUID.randomUUID().toString()
+                                        check(preferences.edit().putString("privacyApprovalRequestId", requestId).commit()) {
+                                            "Could not save the approval request. Please try again."
+                                        }
+                                    }
+                                    val value = requestId
+                                    main.post { result.success(value) }
+                                }
+                            }
+                        } catch (error: Exception) {
+                            main.post { result.error("privacy", error.message ?: "Could not access your privacy choices.", null) }
                         }
                     }
                 }

@@ -4,9 +4,13 @@ import 'dart:io';
 import 'protocol.dart';
 import 'room_member.dart';
 import 'clock_link.dart';
+import 'secure_room_socket.dart';
+export 'secure_room_socket.dart' show PeerVerification;
 
 /// Local-network transport. Room audio stays on the LAN; no upload server.
 class RoomTransport {
+  VerifyPeer? onVerifyPeer;
+  final Set<WebSocket> _handshakes = {};
   final RoomClock clock = RoomClock();
   late final ClockLink _clockLink = ClockLink(clock);
   bool get hasDirectClock => _clockLink.healthy;
@@ -15,9 +19,11 @@ class RoomTransport {
   void Function(String)? onSource;
   void Function(String)? onEnded;
   HttpServer? _server;
-  WebSocket? _host;
-  final Map<WebSocket, RoomMember> _clients = {};
-  final Map<WebSocket, _PeerAudioQueue> _audioQueues = {};
+  SecureRoomSocket? _host;
+  WebSocket? _joiningRaw;
+  int _generation = 0;
+  final Map<SecureRoomSocket, RoomMember> _clients = {};
+  final Map<SecureRoomSocket, _PeerAudioQueue> _audioQueues = {};
   int? _lastBroadcastSequence;
   String _hostName = '';
   int _nextMember = 0;
@@ -54,46 +60,62 @@ class RoomTransport {
     _nextMember = 0;
     _server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
     try {
-      await _clockLink.serve(_server!.port, roomCode);
+      await _clockLink.serve(
+        _server!.port,
+        roomCode,
+        requireAuthentication: true,
+      );
     } catch (_) {
       /* TCP fallback remains available. */
     }
-    _server!.listen((request) async {
-      if (request.headers.value('x-beatrazeem-audio-version') != '2') {
+    final server = _server!;
+    server.listen((request) async {
+      if (request.headers.value('x-beatrazeem-audio-version') !=
+          SecureRoomSocket.version) {
         request.response.statusCode = HttpStatus.upgradeRequired;
         await request.response.close();
         return;
       }
       if (request.headers.value('x-beatrazeem-code') != code ||
-          _clients.length >= 8 ||
+          _clients.length + _handshakes.length >= 8 ||
           !WebSocketTransformer.isUpgradeRequest(request)) {
         request.response.statusCode = HttpStatus.forbidden;
         await request.response.close();
         return;
       }
       try {
-        final encodedName = request.headers.value('x-beatrazeem-name');
-        if (encodedName != null && encodedName.length > 512) {
-          request.response.statusCode = HttpStatus.badRequest;
-          await request.response.close();
+        final raw = await WebSocketTransformer.upgrade(request);
+        if (_server != server || _clients.length + _handshakes.length >= 8) {
+          await raw.close();
           return;
         }
-        final name = encodedName == null
-            ? 'Listener'
-            : roomText(
-                Uri.decodeComponent(encodedName),
-                limit: 24,
-                label: 'Username',
-              );
-        final socket = await WebSocketTransformer.upgrade(request);
-        if (_server == null || _clients.length >= 8) {
+        _handshakes.add(raw);
+        SecureRoomSocket socket;
+        try {
+          socket = await SecureRoomSocket.establish(
+            raw,
+            roomCode: roomCode,
+            isHost: true,
+            verify: onVerifyPeer,
+          );
+        } finally {
+          _handshakes.remove(raw);
+        }
+        if (_server != server) {
           await socket.close();
           return;
         }
-        socket.pingInterval = const Duration(seconds: 5);
+        String name;
+        try {
+          name = roomText(socket.peerIdentity!, limit: 24, label: 'Username');
+        } catch (_) {
+          await socket.close();
+          rethrow;
+        }
+        _clockLink.authorize(socket.clockId, socket.clockKey);
         final member = RoomMember(id: 'member-${++_nextMember}', name: name);
         _clients[socket] = member;
-        if (request.headers.value('x-beatrazeem-audio-ack') == '1') {
+        {
           _audioQueues[socket] = _PeerAudioQueue();
         }
         socket.listen(
@@ -171,18 +193,34 @@ class RoomTransport {
     if (!validRoomCode(roomCode)) {
       throw const FormatException('Use a 6-digit code.');
     }
+    final generation = _generation;
     final uri = Uri(scheme: 'ws', host: address, port: port, path: '/room');
-    WebSocket socket;
+    SecureRoomSocket socket;
     try {
-      socket = await WebSocket.connect(
+      final raw = await WebSocket.connect(
         uri.toString(),
         headers: {
           'x-beatrazeem-code': roomCode,
-          'x-beatrazeem-name': Uri.encodeComponent(name),
           'x-beatrazeem-audio-ack': '1',
-          'x-beatrazeem-audio-version': '2',
+          'x-beatrazeem-audio-version': SecureRoomSocket.version,
         },
       ).timeout(const Duration(seconds: 8));
+      if (_generation != generation) {
+        await raw.close();
+        throw StateError('Joining was cancelled.');
+      }
+      _joiningRaw = raw;
+      socket = await SecureRoomSocket.establish(
+        raw,
+        roomCode: roomCode,
+        isHost: false,
+        verify: onVerifyPeer,
+        username: name,
+      );
+      if (_generation != generation) {
+        await socket.close();
+        throw StateError('Joining was cancelled.');
+      }
     } on WebSocketException catch (error) {
       if (error.httpStatusCode == HttpStatus.upgradeRequired) {
         throw StateError(
@@ -190,15 +228,22 @@ class RoomTransport {
         );
       }
       rethrow;
+    } finally {
+      if (_generation == generation) _joiningRaw = null;
     }
     _host = socket;
     code = roomCode;
     try {
-      await _clockLink.connect(address, port, roomCode);
+      await _clockLink.connect(
+        address,
+        port,
+        roomCode,
+        sessionId: socket.clockId,
+        authenticationKey: socket.clockKey,
+      );
     } catch (_) {
       /* Older rooms and restricted networks use TCP timing. */
     }
-    socket.pingInterval = const Duration(seconds: 5);
     socket.listen(
       (message) {
         final receivedAt = clock.now;
@@ -388,7 +433,7 @@ class RoomTransport {
     }
   }
 
-  void _drainAudio(WebSocket socket, _PeerAudioQueue pending) {
+  void _drainAudio(SecureRoomSocket socket, _PeerAudioQueue pending) {
     if (socket.readyState != WebSocket.open) return;
     final now = clock.now;
     while (pending.unsent.isNotEmpty && pending.inFlight.length < 8) {
@@ -453,13 +498,14 @@ class RoomTransport {
     _notify();
   }
 
-  void _remove(WebSocket socket) {
+  void _remove(SecureRoomSocket socket) {
+    _clockLink.revoke(socket.clockId);
     _audioQueues.remove(socket);
     final removed = _clients.remove(socket);
     if (!_closing && isHost && removed != null) _roster();
   }
 
-  void _disconnected(WebSocket socket) {
+  void _disconnected(SecureRoomSocket socket) {
     if (_host != socket || _closing) return;
     _host = null;
     code = null;
@@ -483,6 +529,10 @@ class RoomTransport {
   }
 
   Future<void> close() async {
+    _generation++;
+    final joining = _joiningRaw;
+    _joiningRaw = null;
+    await joining?.close();
     _closing = true;
     _clockLink.close();
     _ping?.cancel();
@@ -494,6 +544,10 @@ class RoomTransport {
     for (final socket in _clients.keys.toList()) {
       await socket.close();
     }
+    for (final raw in _handshakes.toList()) {
+      await raw.close();
+    }
+    _handshakes.clear();
     _clients.clear();
     _audioQueues.clear();
     _lastBroadcastSequence = null;

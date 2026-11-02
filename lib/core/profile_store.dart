@@ -21,4 +21,7 @@ class ProfileStore {
     final name = roomText(value, limit: 24, label: 'Username');
     await _channel.invokeMethod<void>('saveUsername', name);
   }
+
+  Future<void> deleteUsername() =>
+      _channel.invokeMethod<void>('deleteUsername');
 }

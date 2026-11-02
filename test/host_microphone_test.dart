@@ -6,9 +6,39 @@ import 'package:beatrazeem/audio/audio_timing.dart';
 import 'package:beatrazeem/core/discovery.dart';
 import 'package:beatrazeem/core/protocol.dart';
 import 'package:beatrazeem/core/profile_store.dart';
+import 'package:beatrazeem/core/privacy_store.dart';
+import 'package:beatrazeem/core/privacy_policy.dart';
 import 'package:beatrazeem/core/transport.dart';
 import 'package:beatrazeem/core/room_member.dart';
 import 'package:beatrazeem/main.dart';
+
+class TestPrivacyStore extends PrivacyStore {
+  PrivacyConsent? consent = PrivacyConsent(
+    noticeVersion: PrivacyPolicy.noticeVersion,
+    acceptedAt: DateTime.utc(2026, 11, 2),
+    adultConfirmed: true,
+  );
+  @override
+  Future<PrivacyConsent?> readConsent() async => consent;
+  @override
+  Future<void> saveConsent({
+    required String noticeVersion,
+    required bool adultConfirmed,
+    String? guardianApproval,
+  }) async {
+    consent = PrivacyConsent(
+      noticeVersion: noticeVersion,
+      acceptedAt: DateTime.now().toUtc(),
+      adultConfirmed: adultConfirmed,
+      guardianApproval: guardianApproval,
+    );
+  }
+
+  @override
+  Future<void> deleteAll() async {
+    consent = null;
+  }
+}
 
 class TestProfileStore extends ProfileStore {
   String? name;
@@ -138,6 +168,7 @@ void main() {
         BeatrazeemApp(
           initialThemeMode: ThemeMode.dark,
           studio: Studio(
+            privacyStore: TestPrivacyStore(),
             room: room,
             audio: audio,
             discovery: TestDiscovery(),

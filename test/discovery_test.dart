@@ -22,7 +22,8 @@ class TestNetwork extends LocalNetwork {
 
 void main() {
   test('creator hotspot joins by code without any multicast support', () async {
-    final host = RoomTransport(), listener = RoomTransport();
+    final host = RoomTransport()..onVerifyPeer = (_) async => true;
+    final listener = RoomTransport()..onVerifyPeer = (_) async => true;
     final endpoint = DirectRoomDiscovery(discoveryPort: 0);
     final network = TestNetwork();
     RoomDiscovery? discovery;

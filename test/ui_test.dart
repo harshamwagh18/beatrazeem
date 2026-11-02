@@ -9,7 +9,7 @@ import 'package:beatrazeem/audio/audio_timing.dart';
 import 'package:beatrazeem/core/room_member.dart';
 import 'package:beatrazeem/ui/design.dart';
 import 'host_microphone_test.dart'
-    show TestRoom, TestAudio, TestDiscovery, TestProfileStore;
+    show TestPrivacyStore, TestRoom, TestAudio, TestDiscovery, TestProfileStore;
 
 void main() {
   setUpAll(() async {
@@ -64,6 +64,7 @@ void main() {
           child: BeatrazeemApp(
             initialThemeMode: ThemeMode.dark,
             studio: Studio(
+              privacyStore: TestPrivacyStore(),
               room: room,
               audio: audio,
               discovery: TestDiscovery(),
@@ -169,6 +170,11 @@ void main() {
       await tester.drag(find.byType(ListView), const Offset(0, 1500));
       await tester.pumpAndSettle();
       await snapshot('Home');
+      await tester.tap(find.byTooltip('Privacy & your data'));
+      await tester.pumpAndSettle();
+      await snapshot('Privacy');
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Profile'));
       await tester.pumpAndSettle();
       await snapshot('Profile');
@@ -275,6 +281,7 @@ void main() {
       BeatrazeemApp(
         initialThemeMode: ThemeMode.light,
         studio: Studio(
+          privacyStore: TestPrivacyStore(),
           room: room,
           audio: TestAudio(),
           discovery: TestDiscovery(),

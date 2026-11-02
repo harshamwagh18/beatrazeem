@@ -6,12 +6,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:beatrazeem/core/protocol.dart';
 import 'package:beatrazeem/core/transport.dart';
 import 'package:beatrazeem/core/room_member.dart';
+import 'package:beatrazeem/core/secure_room_socket.dart';
+
+RoomTransport _room() => RoomTransport()..onVerifyPeer = (_) async => true;
 
 void main() {
   test(
     'a listener can recheck timing without disconnecting or losing its name',
     () async {
-      final host = RoomTransport(), listener = RoomTransport();
+      final host = _room(), listener = _room();
       addTearDown(() async {
         await listener.close();
         await host.close();
@@ -46,7 +49,7 @@ void main() {
   test(
     'old listener protocol receives an update requirement instead of silent audio',
     () async {
-      final host = RoomTransport();
+      final host = _room();
       addTearDown(host.close);
       await host.create('123456', username: 'Creator', name: 'Music');
       await expectLater(
@@ -68,7 +71,7 @@ void main() {
   test(
     'a nine-frame capture burst resumes on ACK without losing its last frame',
     () async {
-      final host = RoomTransport();
+      final host = _room();
       await host.create('123456', username: 'Creator', name: 'Timing room');
       final listener = await _AudioListener.connect(host);
       addTearDown(() async {
@@ -105,7 +108,7 @@ void main() {
   test(
     'a stalled listener cannot accumulate an unbounded audio backlog',
     () async {
-      final host = RoomTransport();
+      final host = _room();
       await host.create('123456', username: 'Creator', name: 'Timing room');
       final slow = await _AudioListener.connect(host);
       addTearDown(() async {
@@ -141,7 +144,7 @@ void main() {
   test(
     'expired queued audio is discarded when an ACK releases credit',
     () async {
-      final host = RoomTransport();
+      final host = _room();
       await host.create('123456', username: 'Creator', name: 'Timing room');
       final listener = await _AudioListener.connect(host);
       addTearDown(() async {
@@ -172,7 +175,7 @@ void main() {
     test(
       '${sourceChange ? 'source changes' : 'sequence restarts'} clear unsent audio without reusing old ACK credit',
       () async {
-        final host = RoomTransport();
+        final host = _room();
         await host.create('123456', username: 'Creator', name: 'Timing room');
         final listener = await _AudioListener.connect(host);
         addTearDown(() async {
@@ -222,7 +225,7 @@ void main() {
   test(
     'profile renames reach every member without rejoining or interrupting audio',
     () async {
-      final host = RoomTransport(), a = RoomTransport(), b = RoomTransport();
+      final host = _room(), a = _room(), b = _room();
       addTearDown(() async {
         await a.close();
         await b.close();
@@ -267,7 +270,7 @@ void main() {
   test(
     'room names and Unicode members synchronize, leave and rejoin with distinct identities',
     () async {
-      final host = RoomTransport(), a = RoomTransport(), b = RoomTransport();
+      final host = _room(), a = _room(), b = _room();
       addTearDown(() async {
         await a.close();
         await b.close();
@@ -306,7 +309,7 @@ void main() {
   test(
     'empty and oversized room identity is rejected before opening a room',
     () async {
-      final host = RoomTransport();
+      final host = _room();
       addTearDown(host.close);
       await expectLater(
         host.create('123456', username: ' ', name: 'Sunset'),
@@ -330,7 +333,7 @@ void main() {
   test(
     'two listeners authenticate, synchronize clocks, receive sound and close',
     () async {
-      final host = RoomTransport(), a = RoomTransport(), b = RoomTransport();
+      final host = _room(), a = _room(), b = _room();
       addTearDown(() async {
         await a.close();
         await b.close();
@@ -368,7 +371,7 @@ void main() {
   test(
     'capture state reaches existing and late listeners and resets on close',
     () async {
-      final host = RoomTransport(), a = RoomTransport(), b = RoomTransport();
+      final host = _room(), a = _room(), b = _room();
       addTearDown(() async {
         await a.close();
         await b.close();
@@ -401,7 +404,7 @@ void main() {
     },
   );
   test('wrong code is rejected', () async {
-    final host = RoomTransport(), guest = RoomTransport();
+    final host = _room(), guest = _room();
     addTearDown(() async {
       await guest.close();
       await host.close();
@@ -415,20 +418,26 @@ void main() {
   });
 
   test('creator clock replies contain receive and send timestamps', () async {
-    final host = RoomTransport();
+    final host = _room();
     await host.create('123456', username: 'Host', name: 'Timing room');
-    final peer = await WebSocket.connect(
+    final rawPeer = await WebSocket.connect(
       'ws://127.0.0.1:${host.port}/room',
       headers: {
-        'x-beatrazeem-audio-version': '2',
+        'x-beatrazeem-audio-version': SecureRoomSocket.version,
         'x-beatrazeem-code': '123456',
       },
+    );
+    final peer = await SecureRoomSocket.establish(
+      rawPeer,
+      roomCode: '123456',
+      isHost: false,
+      verify: (_) async => true,
     );
     addTearDown(() async {
       await peer.close();
       await host.close();
     });
-    final pong = peer
+    final pong = peer.stream
         .where((message) => message is String)
         .map((message) => jsonDecode(message as String) as Map<String, dynamic>)
         .firstWhere((message) => message['type'] == 'pong');
@@ -439,48 +448,46 @@ void main() {
     expect(reply['host'], greaterThanOrEqualTo(reply['hostReceived'] as int));
   });
 
-  test('old one-timestamp hosts remain compatible', () async {
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final hostClock = RoomClock();
-    final sockets = <WebSocket>[];
-    server.listen((request) async {
-      final socket = await WebSocketTransformer.upgrade(request);
-      sockets.add(socket);
-      socket.listen((message) {
-        final ping = jsonDecode(message as String) as Map<String, dynamic>;
-        socket.add(
-          jsonEncode({
-            'type': 'pong',
-            'sent': ping['sent'],
-            'host': hostClock.now,
-          }),
-        );
+  test(
+    'plaintext hosts are rejected instead of silently downgrading security',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        final raw = await WebSocketTransformer.upgrade(request);
+        raw.listen((_) {
+          raw.add(jsonEncode({'type': 'welcome', 'room': 'Unencrypted'}));
+        });
       });
-    });
-    final guest = RoomTransport();
-    addTearDown(() async {
-      await guest.close();
-      for (final socket in sockets) {
-        await socket.close();
-      }
-      await server.close(force: true);
-    });
-    await guest.join('127.0.0.1', server.port, '123456', username: 'Guest');
-    expect(guest.connected, isTrue);
-    expect(guest.clock.ready, isTrue);
-  });
+      final guest = _room();
+      addTearDown(() async {
+        await guest.close();
+        await server.close(force: true);
+      });
+      await expectLater(
+        guest.join('127.0.0.1', server.port, '123456', username: 'Guest'),
+        throwsA(anything),
+      );
+      expect(guest.connected, isFalse);
+    },
+  );
 
   test(
     'join fails cleanly when a host never establishes audio timing',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final sockets = <WebSocket>[];
+      final sockets = <SecureRoomSocket>[];
       server.listen((request) async {
-        final socket = await WebSocketTransformer.upgrade(request);
+        final raw = await WebSocketTransformer.upgrade(request);
+        final socket = await SecureRoomSocket.establish(
+          raw,
+          roomCode: '123456',
+          isHost: true,
+          verify: (_) async => true,
+        );
         sockets.add(socket);
         socket.listen((_) {}); // Connected but never answers clock requests.
       });
-      final guest = RoomTransport();
+      final guest = _room();
       addTearDown(() async {
         await guest.close();
         for (final socket in sockets) {
@@ -508,28 +515,44 @@ void main() {
 class _AudioListener {
   _AudioListener(this.socket) {
     socket.listen((message) {
+      if (message is String) {
+        if ((jsonDecode(message) as Map)['type'] == 'welcome' &&
+            !_welcome.isCompleted) {
+          _welcome.complete();
+        }
+        return;
+      }
       if (message is! List<int>) return;
       frames.add(AudioFrame.decode(message)!);
       if (!_received.isClosed) _received.add(null);
     });
   }
 
-  final WebSocket socket;
+  final _welcome = Completer<void>();
+  final SecureRoomSocket socket;
   final List<AudioFrame> frames = [];
   final StreamController<void> _received = StreamController.broadcast(
     sync: true,
   );
 
   static Future<_AudioListener> connect(RoomTransport host) async {
-    final socket = await WebSocket.connect(
+    final raw = await WebSocket.connect(
       'ws://127.0.0.1:${host.port}/room',
       headers: {
-        'x-beatrazeem-audio-version': '2',
+        'x-beatrazeem-audio-version': SecureRoomSocket.version,
         'x-beatrazeem-code': '123456',
         'x-beatrazeem-audio-ack': '1',
       },
     );
-    return _AudioListener(socket);
+    final socket = await SecureRoomSocket.establish(
+      raw,
+      roomCode: '123456',
+      isHost: false,
+      verify: (_) async => true,
+    );
+    final listener = _AudioListener(socket);
+    await listener._welcome.future.timeout(const Duration(seconds: 2));
+    return listener;
   }
 
   Future<void> waitForCount(int count) async {

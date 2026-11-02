@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:beatrazeem/core/profile_store.dart';
 import 'package:beatrazeem/main.dart';
 import 'host_microphone_test.dart'
-    show TestRoom, TestAudio, TestDiscovery, TestProfileStore;
+    show TestPrivacyStore, TestRoom, TestAudio, TestDiscovery, TestProfileStore;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +34,7 @@ void main() {
     await tester.pumpWidget(
       BeatrazeemApp(
         studio: Studio(
+          privacyStore: TestPrivacyStore(),
           profileStore: store,
           room: room ?? TestRoom(),
           audio: TestAudio(),
@@ -216,6 +217,7 @@ void main() {
       await tester.pumpWidget(
         BeatrazeemApp(
           studio: Studio(
+            privacyStore: TestPrivacyStore(),
             audio: TestAudio(),
             discovery: TestDiscovery(),
             room: TestRoom(),

@@ -1,38 +1,25 @@
-# Timing adjustment patch — 0.8.2 (build 15)
+# Validation — 3 November 2026, version 0.9.0 (build 16)
 
-Flutter analysis passed with no issues. All 54 Flutter tests passed. Negative timing offsets are now clamped to zero; the adjustment UI adds delay only and is disabled during playback. Existing tests do not replace physical-device audio testing. No physical-phone test was performed for this patch.
+This release adds privacy onboarding, versioned local consent, local withdrawal/erasure, guardian approval verification, privacy request drafts, backup exclusions, and authenticated encrypted rooms. See PRIVACY_CHANGELOG.md for source locations and PRIVACY_OPERATIONS.md for operational obligations and unresolved legal questions.
 
-# Validation — 2 November 2026, version 0.8.1 (build 14)
+## Checks completed
 
-This update removes the Resync control and extra Live delay metrics, stabilizes app capture timestamps, interpolates small packet timing corrections, retains useful captured-audio bursts until delivery credit is available, and recovers automatically after output interruptions. The configured shared buffer remains 200 ms.
+- Flutter static analysis: no issues.
+- Full Flutter suite: 84 tests passed after secure transport, consent UI, storage and guardian validation integration. Subsequently added two peer-verification UI tests and one guardian-email fallback test; all 11 affected privacy/peer UI tests passed after the final fallback change. This covers 87 distinct app checks across the full and targeted runs.
+- Consent tests cover unchecked affirmative choices, existing-profile gating, invalid/stored guardian approvals, failed consent saves, active-room shutdown on withdrawal, failed erasure staying blocked, and explicit email/copy fallback.
+- Guardian validation checks signatures, phone reference, notice version, expiry, future issue time, excessive lifetime, malformed payloads and tampering. The operator tool's five Python tests passed. These checks verify signed decisions, not the identity or authority of real guardians.
+- Transport tests cover approval before personal-data exchange, encrypted payload inspection, decline/default denial, tampering/replay/plaintext rejection, source resets, queue bounds, room discovery, authenticated clock messages, session revocation and UDP flood recovery.
+- Four UI preview tests passed; the new Privacy screen was rendered and visually inspected. Timing-preview numbers remain illustrative fixtures.
+- Android debug APK built successfully; application com.beatrazeem.beatrazeem, version0.9.0, versionCode16, minimumAndroid24 (Android7), target35. App-audio capture and Karaoke still require Android10+.
+- APK signature verified with the existing signing certificate SHA-256 56143b76408191b30c4ba1bab9f38a4c1a3972f6e8595865ac4d58681b572874.
+- Operator signing key is outside the application/source repository. Only its public verification key is included in the app.
 
-## Reproduced faults and fixes
+## Limits and remaining verification
 
-- The added capture jitter regression failed against the previous code: consecutive 20 ms blocks were separated by 23 ms after one noisy timestamp. A backward observation could also collapse block spacing. Capture now uses a median-filtered, rate-limited sample clock and briefly waits for an initial hardware timestamp before emitting audio.
-- Small positive packet timing corrections previously inserted silence; negative corrections skipped samples. Consecutive prequeued packets now interpolate continuously. A review found that retiming partially rendered packets could repeat or skip samples, so their mapping is frozen once rendering starts.
-- Eight unacknowledged packets previously caused all later burst packets to be discarded, including packets still scheduled in the future. A bounded unsent queue now drains on acknowledgements, discards expired audio, and handles stream sequence restarts without granting duplicate delivery credit.
-- Known output interruptions below 40 ms previously remained on the old sample cursor and recovered slowly. They now explicitly reanchor the output timeline; underruns are checked on every render cycle.
+No real-device multi-phone test, acoustic synchronization measurement, manufacturer backup/transfer test, live guardian identity check, real mailbox request handling, or independent cryptographic audit was performed. Tests use synthetic media, loopback networking and mocked platform calls where appropriate. The pairing protocol uses established library primitives, but the protocol itself still needs independent security review. Users must actually compare both phones' security codes.
 
-## Checks performed
+Local discovery and connection/traffic metadata remain visible. The Android cleartext-carrier flag remains necessary for local discovery and the WebSocket carrier; personal payloads are encrypted inside that carrier. Old clients are rejected rather than receiving plaintext fallback.
 
-- Flutter analysis: no issues.
-- All 54 automated Flutter tests passed. New cases cover nine-frame capture bursts, bounded stalled listeners, expiry, stream resets, live delay refresh, and read-only delay controls. Existing profile, theme, Karaoke, discovery, clock, membership, and protocol checks remain covered.
-- All 25 native timeline checks passed. Coverage includes noisy and backward capture timestamps, startup frame positions, positive/negative packet corrections, late successors, genuine missing packets, sample-derived delay, automatic interruption recovery, and capture-worker stalls. A two-minute simulation renders jittered capture plus room-clock corrections continuously; a separate ten-minute simulation checks independent speaker-clock rates.
-- All 11 native Karaoke checks passed, including microphone continuity across 20 ms mixed packets.
-- The updated Live delay preview was generated and visually reviewed. The displayed 204 ms is an illustrative test fixture, not a physical-device measurement. Small-screen widget checks passed at 360 pixels wide.
-- Android ARM64 debug APK built successfully: package `com.beatrazeem.beatrazeem`, version `0.8.1`, version code `14`.
-- APK signing verification passed with the existing certificate SHA-256 `56143b76408191b30c4ba1bab9f38a4c1a3972f6e8595865ac4d58681b572874`.
+Guardian approvals enforce an operator decision after manual verification; no external identity-verification service is connected. Offline approvals cannot be remotely revoked immediately, and device clock manipulation can affect expiry. The adult route uses self-declaration. These limitations, legal-role determination, final Rules6/8 retention applicability, mailbox staffing, rights/nomination handling and effective breach-notification delivery remain operator/release requirements. This is a development build with added privacy/security controls, not a certification that all laws are satisfied.
 
-## Device verification still required
-
-No physical multi-phone or acoustic latency test was performed. The user reported that the room chime was aligned while app audio differed; the fixes target the captured-audio path and identified continuity defects. Automated checks cannot confirm the reported symptom is gone on the user's phones.
-
-Install 0.8.1 on every phone, connect listeners to the creator's hotspot, and recreate the room. Use built-in speakers with manual adjustments at 0 ms. Compare joined phones using the chime, then captured app audio for ten minutes. Read Live delay on each joined phone, verify that stale values disappear, and repeat after a route change. Test Karaoke with a real source app and speaker as well. An external acoustic recording is needed to measure audible alignment between phones.
-
-## Measurement limits
-
-Live delay maps captured samples to Android AudioTrack presentation timestamps. It depends on capture timestamps, room-clock estimation, the audio driver, and route reporting; it does not measure sound arrival or directly measure differences between phones. When fresh speaker timestamps are unavailable it shows Measuring… rather than zero. Drivers without capture timestamps use a sample-position estimate after bounded startup warmup; later timestamp corrections settle gradually. Bluetooth may add unreported latency. The creator's original source-app playback is not delayed or replaced by Beatrazeem.
-
-Each listener has at most eight packets in flight plus ten unsent 20 ms packets (at most 200 ms unsent audio). Expired packets are dropped. A sufficiently slow connection can still cause audible gaps; the app does not replay an ever-growing backlog. Android 7+ supports joining and microphone mode; other-app capture and Karaoke require Android 10+ and source-app permission.
-
-Android references: [AudioRecord timestamps](https://developer.android.com/reference/android/media/AudioRecord#getTimestamp(android.media.AudioTimestamp,%20int)), [AudioTrack timestamps and underruns](https://developer.android.com/reference/android/media/AudioTrack), and [playback capture](https://developer.android.com/media/platform/av-capture).
+Install0.9.0 on every test phone, accept the notice (or use a properly issued guardian approval), recreate rooms, compare security codes, and verify microphone/app audio/Karaoke with built-in and Bluetooth speakers. Test withdrawal while sharing, restart after deletion, permission revocation, declined device verification, approval expiry, phone-clock changes and backup/restore behavior. Retain evidence before public release.

@@ -10,6 +10,11 @@ import 'core/capture_timeline.dart';
 import 'core/discovery.dart';
 import 'core/protocol.dart';
 import 'core/profile_store.dart';
+import 'core/privacy_store.dart';
+import 'core/privacy_policy.dart';
+import 'core/guardian_approval.dart';
+import 'ui/privacy_screen.dart';
+import 'ui/peer_verification_dialog.dart';
 import 'core/transport.dart';
 import 'core/room_member.dart';
 import 'ui/design.dart';
@@ -77,11 +82,13 @@ class Studio extends StatefulWidget {
     this.discovery,
     this.audio,
     this.profileStore = const ProfileStore(),
+    this.privacyStore = const PrivacyStore(),
   });
   final RoomTransport? room;
   final RoomDiscovery? discovery;
   final AudioEngine? audio;
   final ProfileStore profileStore;
+  final PrivacyStore privacyStore;
   @override
   State<Studio> createState() => _StudioState();
 }
@@ -100,6 +107,10 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   String? username;
   String? usernameSaveError;
   bool profileLoaded = false;
+  bool privacyAccepted = false, verifyingPeer = false, expiringConsent = false;
+  PrivacyConsent? privacyConsent;
+  DateTime? guardianExpiry;
+  Timer? privacyCheck;
   bool profileLoadFailed = false;
   bool joining = false;
   StreamSubscription? updates;
@@ -130,6 +141,24 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    room.onVerifyPeer = (verification) async {
+      if (!mounted || !privacyAccepted || verifyingPeer) return false;
+      verifyingPeer = true;
+      try {
+        final accepted = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => PeerVerificationDialog(verification: verification),
+        );
+        return accepted == true && mounted && privacyAccepted;
+      } finally {
+        verifyingPeer = false;
+      }
+    };
+    privacyCheck = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => unawaited(_checkEligibility()),
+    );
     updates = room.changes.stream.listen((_) {
       if (mounted) setState(() {});
     });
@@ -189,9 +218,24 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   Future<void> _loadProfile() async {
     setState(() => profileLoadFailed = false);
     try {
+      final consent = await widget.privacyStore.readConsent();
+      DateTime? expiry;
+      bool accepted = consent?.accepts(PrivacyPolicy.noticeVersion) ?? false;
+      if (consent != null &&
+          !consent.adultConfirmed &&
+          consent.noticeVersion == PrivacyPolicy.noticeVersion) {
+        final id = await widget.privacyStore.readApprovalRequestId();
+        if (id != null) {
+          expiry = await GuardianApproval.verify(consent.guardianApproval!, id);
+        }
+        accepted = expiry != null;
+      }
       final saved = await widget.profileStore.readUsername();
       if (!mounted) return;
       setState(() {
+        privacyConsent = consent;
+        privacyAccepted = accepted;
+        guardianExpiry = expiry;
         username = saved;
         usernameInput.text = saved ?? '';
         profileLoaded = true;
@@ -199,6 +243,116 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     } catch (_) {
       if (mounted) setState(() => profileLoadFailed = true);
     }
+  }
+
+  Future<void> _stopForPrivacy() async {
+    testTone?.cancel();
+    captureCheck?.cancel();
+    captureHealth.stop();
+    timingVersion++;
+    if (mounted) {
+      setState(() {
+        privacyAccepted = false;
+        sending = false;
+        level = 0;
+        audioTiming = const AudioTiming();
+      });
+    }
+    // Attempt every shutdown even if one platform operation reports failure.
+    await Future.wait([
+      audio.stopInput(),
+      audio.stopOutput(),
+      room.close(),
+      discovery.stop(),
+    ]);
+  }
+
+  Future<void> _checkEligibility() async {
+    if (expiringConsent ||
+        guardianExpiry == null ||
+        !privacyAccepted ||
+        DateTime.now().isBefore(guardianExpiry!)) {
+      return;
+    }
+    expiringConsent = true;
+    try {
+      await _stopForPrivacy();
+      if (mounted) {
+        setState(
+          () => error =
+              'Guardian approval expired. Renew it before joining a room.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => error =
+              'Guardian approval expired. Sharing shutdown reported an error. Close Beatrazeem in Android before continuing.',
+        );
+      }
+    } finally {
+      expiringConsent = false;
+    }
+  }
+
+  Future<void> _withdrawPrivacy() async {
+    await _stopForPrivacy();
+    try {
+      await widget.privacyStore.deleteAll();
+    } catch (_) {
+      throw StateError(
+        'Sharing stopped. Local data could not be deleted. Retry deletion, or use Android Settings → Apps → Beatrazeem → Clear storage before reopening.',
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      privacyConsent = null;
+      guardianExpiry = null;
+      username = null;
+      usernameInput.clear();
+      roomNameInput.clear();
+      codeInput.clear();
+      error = null;
+    });
+  }
+
+  Widget _privacyContents({
+    bool gate = false,
+    Future<void> Function()? afterDelete,
+  }) => PrivacyScreen(
+    store: widget.privacyStore,
+    consent: privacyConsent,
+    username: username,
+    roomName: room.roomName,
+    members: room.members.map((m) => m.name).toList(),
+    requiredBeforeUse: gate,
+    onAccepted: _loadProfile,
+    onWithdraw: () async {
+      await _withdrawPrivacy();
+      await afterDelete?.call();
+    },
+  );
+
+  Future<void> _openPrivacy() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (pageContext) => Scaffold(
+          appBar: AppBar(title: const Text('Privacy')),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(22),
+              children: [
+                _privacyContents(
+                  afterDelete: () async {
+                    if (pageContext.mounted) Navigator.pop(pageContext);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _saveUsername(String name) async {
@@ -286,7 +440,9 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   }
 
   Future<void> _create() async {
-    if (!(roomForm.currentState?.validate() ?? false)) return;
+    if (!privacyAccepted || !(roomForm.currentState?.validate() ?? false)) {
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     await _action(() async {
       await discovery.prepareHost();
@@ -308,7 +464,9 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   }
 
   Future<void> _join() async {
-    if (!(roomForm.currentState?.validate() ?? false)) return;
+    if (!privacyAccepted || !(roomForm.currentState?.validate() ?? false)) {
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     await _action(() async {
       final code = codeInput.text.trim();
@@ -329,6 +487,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   }
 
   Future<void> _start() => _action(() async {
+    if (!privacyAccepted) return;
     if (mode != 'mic' && deviceInfo?['supported'] == false) {
       throw Exception(
         'App audio sharing needs Android 10 or newer. This phone can still share its microphone or join a room.',
@@ -426,6 +585,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_checkEligibility());
     // Android's device-capture foreground service keeps running in other apps.
     if (state == AppLifecycleState.paused && sending && mode == 'mic') {
       unawaited(_stop());
@@ -444,6 +604,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     testTone?.cancel();
     captureCheck?.cancel();
     timingCheck?.cancel();
+    privacyCheck?.cancel();
     updates?.cancel();
     unawaited(discovery.stop());
     unawaited(room.close());
@@ -464,7 +625,11 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   }
 
   Future<void> _continue() async {
-    if (busy || !(profileForm.currentState?.validate() ?? false)) return;
+    if (!privacyAccepted ||
+        busy ||
+        !(profileForm.currentState?.validate() ?? false)) {
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     final name = roomText(usernameInput.text, limit: 24, label: 'Username');
     setState(() => usernameSaveError = null);
@@ -491,6 +656,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final page = !profileLoaded
         ? 'loading-profile'
+        : !privacyAccepted
+        ? 'privacy'
         : username == null
         ? 'welcome'
         : room.connected
@@ -531,6 +698,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
                           ],
                           if (!profileLoaded)
                             _profileLoading()
+                          else if (!privacyAccepted)
+                            _privacyContents(gate: true)
                           else if (username == null)
                             ..._welcome()
                           else if (!room.connected)
@@ -553,7 +722,12 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   Widget _header() => Row(
     children: [
       const Expanded(child: BrandMark()),
-      if (username != null)
+      IconButton(
+        tooltip: 'Privacy & your data',
+        onPressed: busy ? null : _openPrivacy,
+        icon: Icon(Icons.privacy_tip_outlined, color: c.muted, size: 21),
+      ),
+      if (username != null && privacyAccepted)
         IconButton(
           tooltip: 'Profile',
           onPressed: busy ? null : _openProfile,
@@ -1785,7 +1959,7 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
       title: const Text('Your sound. Your people.'),
       content: const SingleChildScrollView(
         child: Text(
-          '1. Choose your username once; it is saved on this phone. Tap your profile icon to change it later. Turn on the creator’s hotspot in Android settings, then connect every listener to that hotspot before joining.\n\n2. Name a room and share its six-digit code. Up to eight listeners can join. Everyone sees the room name and member list.\n\n3. Select Microphone, App audio, or Karaoke. Karaoke mixes the mic with captured music and adds Singer level, Backing music, and Your microphone controls. Singer reduction works best with stereo tracks and can affect instruments. Allow the requested permissions. The phone’s mic can play through its connected Bluetooth speaker. Select that speaker for media audio in Android settings.\n\n4. Keep Beatrazeem open on listeners and while using the microphone. App-audio creators can switch to the source app.\n\nOther-app capture needs Android 10+ and permission from the source app; some content cannot be shared.\n\nTo fine-tune a speaker: open Your speaker → Adjust speaker timing and follow the four steps. Stop sharing before adjusting. Delay faster phones to match the slowest phone at 0 ms. Reset returns to 0 ms.\n\nPlayback has a shared delay. Bluetooth and phone hardware can add more. Perfect synchronization and zero lag are not guaranteed.\n\nNames are shown to people in this nearby room. They are display names, not verified accounts. Audio is not uploaded or saved. Rooms use local discovery and unencrypted audio, so use trusted Wi-Fi. Guest networks may block discovery.',
+          '1. Choose your username once; it is saved on this phone. Tap your profile icon to change it later. Turn on the creator’s hotspot in Android settings, then connect every listener to that hotspot before joining.\n\n2. Name a room and share its six-digit code. Up to eight listeners can join. Everyone sees the room name and member list.\n\n3. Select Microphone, App audio, or Karaoke. Karaoke mixes the mic with captured music and adds Singer level, Backing music, and Your microphone controls. Singer reduction works best with stereo tracks and can affect instruments. Allow the requested permissions. The phone’s mic can play through its connected Bluetooth speaker. Select that speaker for media audio in Android settings.\n\n4. Keep Beatrazeem open on listeners and while using the microphone. App-audio creators can switch to the source app.\n\nOther-app capture needs Android 10+ and permission from the source app; some content cannot be shared.\n\nTo fine-tune a speaker: open Your speaker → Adjust speaker timing and follow the four steps. Stop sharing before adjusting. Delay faster phones to match the slowest phone at 0 ms. Reset returns to 0 ms.\n\nPlayback has a shared delay. Bluetooth and phone hardware can add more. Perfect synchronization and zero lag are not guaranteed.\n\nNames are shown to people in this nearby room. They are display names, not verified accounts. Audio is not uploaded or saved. Rooms use encrypted audio. Compare and confirm the security code on both phones before admitting a device. Use Privacy & your data to review the notice, request help, or withdraw and delete local data. Guest networks may block discovery.',
           style: TextStyle(height: 1.5),
         ),
       ),
