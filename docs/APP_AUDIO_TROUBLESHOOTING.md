@@ -1,6 +1,6 @@
 # When app audio is silent
 
-1. Install version 0.9.0 on the creator and listeners. Turn on the creator’s hotspot, connect all listeners to it, then recreate the room and join with its six-digit code. Compare the separate security code on both phones and approve both before audio is shared.
+1. Install version 0.9.1 on the creator and listeners. Turn on the creator’s hotspot, connect all listeners to it, then recreate the room and join with its six-digit code. Compare the separate security code on both phones and approve both before audio is shared.
 2. Keep listener apps open, unmute their output, and raise their media volume. On the creator, tap **Test room speakers**. This stops any active sharing session and sends a short chime.
 3. If the chime is audible on the listeners, the room can deliver sound. Select **App audio → Share device audio**, approve Android's sharing request, then open your audio/video app and press play. Keep the creator phone unlocked.
 4. Return to Beatrazeem and read the app-audio status. If audio pauses when you switch away from the source app, check the same status on a listener while the source keeps playing.
@@ -22,7 +22,7 @@ This is a development build. The software checks do not establish physical-devic
 
 ## Checking synchronization
 
-Update every phone to 0.9.0, recreate the room, leave speaker timing adjustments at 0 ms, and run Test room speakers first with built-in speakers. Compare the joined phones to each other. The creator’s original YouTube/Spotify playback is not delayed by capture and will be earlier. Keep app-audio monitoring off to avoid a delayed duplicate. If joined phones remain offset, report their models, whether the offset stays constant or grows, and whether it also happens with the test chime.
+Update every phone to 0.9.1, recreate the room, leave speaker timing adjustments at 0 ms, and run Test room speakers first with built-in speakers. Compare the joined phones to each other. The creator’s original YouTube/Spotify playback is not delayed by capture and will be earlier. Keep app-audio monitoring off to avoid a delayed duplicate. If joined phones remain offset, report their models, whether the offset stays constant or grows, and whether it also happens with the test chime.
 
 ## Checking Karaoke
 
@@ -35,7 +35,7 @@ Update every phone to 0.9.0, recreate the room, leave speaker timing adjustments
 
 ## Joining the creator's hotspot
 
-1. Update **every phone** to 0.9.0. On the creator, enable the hotspot in Android settings before creating the room.
+1. Update **every phone** to 0.9.1. On the creator, enable the hotspot in Android settings before creating the room.
 2. Connect all listeners to that hotspot through their Wi-Fi settings. The creator stays the hotspot provider; it does not join a listener's network.
 3. Keep Beatrazeem's room open on the creator. Enter its six-digit code on each listener. The app checks the actual gateway address; no IP address entry or file upload is needed.
 4. If Android says the hotspot has no internet, choose to remain connected. The room itself does not need internet. A source app may still need internet to play music.
@@ -57,6 +57,10 @@ Timing adjustments run automatically. The Resync button has been removed. The ex
 
 ## Broken or choppy app audio
 
-Version 0.9.0 fixes abrupt capture timestamp changes, small gaps at packet boundaries, loss of useful packets during capture bursts, and slow recovery after an output interruption. Install it on every phone and recreate the room. Start with built-in speakers and manual adjustments at 0 ms. Compare the room chime, then captured app audio on the joined phones for ten minutes. Keep creator app-audio monitoring off to avoid a delayed duplicate of its original source sound.
+Version 0.9.1 retains the earlier fixes for abrupt capture timestamp changes, small gaps at packet boundaries, loss of useful packets during capture bursts, and slow recovery after an output interruption. Install it on every phone and recreate the room. Start with built-in speakers and manual adjustments at 0 ms. Compare the room chime, then captured app audio on the joined phones for ten minutes. Keep creator app-audio monitoring off to avoid a delayed duplicate of its original source sound.
 
 If the joined phones still stutter or separate, record their Live delay readings and whether the problem starts immediately or grows. Real-device tests are needed to distinguish Wi-Fi stalls, source capture behavior, and output-driver latency. The creator's original source-app playback remains outside Beatrazeem's shared buffer.
+
+## Android permission checks in 0.9.1
+
+App-audio/Karaoke startup rechecks microphone permission and reports if permission was revoked. Re-enable microphone access in Android app settings and approve sharing again. On Android 13+, the app may ask to show its ongoing sharing notification. That choice is optional: denying it does not block the foreground sharing service, but Android may show its status only in the active-apps/task-manager area. See [Android notification permission behavior](https://developer.android.com/develop/ui/compose/notifications/notification-permission).

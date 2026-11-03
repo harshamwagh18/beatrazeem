@@ -12,7 +12,6 @@ import 'core/protocol.dart';
 import 'core/profile_store.dart';
 import 'core/privacy_store.dart';
 import 'core/privacy_policy.dart';
-import 'core/guardian_approval.dart';
 import 'ui/privacy_screen.dart';
 import 'ui/peer_verification_dialog.dart';
 import 'core/transport.dart';
@@ -107,10 +106,8 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
   String? username;
   String? usernameSaveError;
   bool profileLoaded = false;
-  bool privacyAccepted = false, verifyingPeer = false, expiringConsent = false;
+  bool privacyAccepted = false, verifyingPeer = false;
   PrivacyConsent? privacyConsent;
-  DateTime? guardianExpiry;
-  Timer? privacyCheck;
   bool profileLoadFailed = false;
   bool joining = false;
   StreamSubscription? updates;
@@ -155,10 +152,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
         verifyingPeer = false;
       }
     };
-    privacyCheck = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => unawaited(_checkEligibility()),
-    );
     updates = room.changes.stream.listen((_) {
       if (mounted) setState(() {});
     });
@@ -219,23 +212,12 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     setState(() => profileLoadFailed = false);
     try {
       final consent = await widget.privacyStore.readConsent();
-      DateTime? expiry;
-      bool accepted = consent?.accepts(PrivacyPolicy.noticeVersion) ?? false;
-      if (consent != null &&
-          !consent.adultConfirmed &&
-          consent.noticeVersion == PrivacyPolicy.noticeVersion) {
-        final id = await widget.privacyStore.readApprovalRequestId();
-        if (id != null) {
-          expiry = await GuardianApproval.verify(consent.guardianApproval!, id);
-        }
-        accepted = expiry != null;
-      }
+      final accepted = consent?.accepts(PrivacyPolicy.noticeVersion) ?? false;
       final saved = await widget.profileStore.readUsername();
       if (!mounted) return;
       setState(() {
         privacyConsent = consent;
         privacyAccepted = accepted;
-        guardianExpiry = expiry;
         username = saved;
         usernameInput.text = saved ?? '';
         profileLoaded = true;
@@ -267,34 +249,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     ]);
   }
 
-  Future<void> _checkEligibility() async {
-    if (expiringConsent ||
-        guardianExpiry == null ||
-        !privacyAccepted ||
-        DateTime.now().isBefore(guardianExpiry!)) {
-      return;
-    }
-    expiringConsent = true;
-    try {
-      await _stopForPrivacy();
-      if (mounted) {
-        setState(
-          () => error =
-              'Guardian approval expired. Renew it before joining a room.',
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(
-          () => error =
-              'Guardian approval expired. Sharing shutdown reported an error. Close Beatrazeem in Android before continuing.',
-        );
-      }
-    } finally {
-      expiringConsent = false;
-    }
-  }
-
   Future<void> _withdrawPrivacy() async {
     await _stopForPrivacy();
     try {
@@ -307,7 +261,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       privacyConsent = null;
-      guardianExpiry = null;
       username = null;
       usernameInput.clear();
       roomNameInput.clear();
@@ -585,7 +538,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_checkEligibility());
     // Android's device-capture foreground service keeps running in other apps.
     if (state == AppLifecycleState.paused && sending && mode == 'mic') {
       unawaited(_stop());
@@ -604,7 +556,6 @@ class _StudioState extends State<Studio> with WidgetsBindingObserver {
     testTone?.cancel();
     captureCheck?.cancel();
     timingCheck?.cancel();
-    privacyCheck?.cancel();
     updates?.cancel();
     unawaited(discovery.stop());
     unawaited(room.close());

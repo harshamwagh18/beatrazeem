@@ -8,6 +8,12 @@ void main() {
   const channel = MethodChannel('beatrazeem/privacy');
   const profileChannel = MethodChannel('beatrazeem/profile');
   const store = PrivacyStore();
+  const current = '2026-11-03.1';
+  final valid = <String, Object>{
+    'noticeVersion': current,
+    'acceptedAtEpochMs': 1793664000000,
+    'minimumAgeConfirmed': true,
+  };
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   tearDown(() {
@@ -20,36 +26,90 @@ void main() {
     expect(await store.readConsent(), isNull);
   });
 
+  test('new consent applies only to the notice actually accepted', () async {
+    messenger.setMockMethodCallHandler(channel, (_) async => valid);
+    final consent = (await store.readConsent())!;
+    expect(consent.accepts(current), isTrue);
+    expect(consent.accepts('2026-11-04.1'), isFalse);
+    expect(consent.acceptedAt.isUtc, isTrue);
+    expect(consent.minimumAgeConfirmed, isTrue);
+    expect(consent.adultConfirmed, isFalse);
+    expect(consent.guardianApproval, isNull);
+  });
+
+  test('corrupt or incomplete current receipts fail closed', () async {
+    for (final receipt in [
+      {...valid, 'noticeVersion': ''},
+      {...valid, 'acceptedAtEpochMs': -1},
+      {...valid, 'acceptedAtEpochMs': 8640000000000001},
+      {...valid, 'acceptedAtEpochMs': 'yesterday'},
+      {...valid, 'minimumAgeConfirmed': false},
+      {...valid, 'minimumAgeConfirmed': 'true'},
+      {...valid, 'minimumAgeConfirmed': null},
+      {'noticeVersion': current},
+    ]) {
+      messenger.setMockMethodCallHandler(channel, (_) async => receipt);
+      await expectLater(store.readConsent(), throwsFormatException);
+    }
+  });
+
+  test('new age receipt cannot mix adult or guardian claims', () async {
+    for (final receipt in [
+      {...valid, 'adultConfirmed': true},
+      {...valid, 'adultConfirmed': 'false'},
+      {...valid, 'guardianApproval': 'legacy-token'},
+      {...valid, 'guardianApproval': ''},
+    ]) {
+      messenger.setMockMethodCallHandler(channel, (_) async => receipt);
+      await expectLater(store.readConsent(), throwsFormatException);
+    }
+  });
+
+  test('legacy adult receipt remains readable but needs a new choice', () async {
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) async => {
+        'noticeVersion': current,
+        'acceptedAtEpochMs': 1793577600000,
+        'adultConfirmed': true,
+      },
+    );
+    final receipt = (await store.readConsent())!;
+    expect(receipt.adultConfirmed, isTrue);
+    expect(receipt.minimumAgeConfirmed, isFalse);
+    // Even a matching notice string cannot turn old-schema storage into consent.
+    expect(receipt.accepts(current), isFalse);
+  });
+
   test(
-    'consent applies only to the notice version actually accepted',
+    'legacy guardian receipt remains readable without granting entry',
     () async {
       messenger.setMockMethodCallHandler(
         channel,
         (_) async => {
-          'noticeVersion': '2026-11-02.1',
+          'noticeVersion': current,
           'acceptedAtEpochMs': 1793577600000,
-          'adultConfirmed': true,
+          'adultConfirmed': false,
+          'guardianApproval': 'old-signed-token',
         },
       );
-      final consent = (await store.readConsent())!;
-      expect(consent.accepts('2026-11-02.1'), isTrue);
-      expect(consent.accepts('2026-11-03.1'), isFalse);
-      expect(consent.acceptedAt.isUtc, isTrue);
+      final receipt = (await store.readConsent())!;
+      expect(receipt.guardianApproval, 'old-signed-token');
+      expect(receipt.minimumAgeConfirmed, isFalse);
+      expect(receipt.accepts(current), isFalse);
     },
   );
 
-  test('corrupt or incomplete receipts fail closed', () async {
-    final valid = <String, Object>{
-      'noticeVersion': 'v1',
+  test('corrupt legacy receipts still fail closed', () async {
+    final old = {
+      'noticeVersion': '2026-11-02.1',
       'acceptedAtEpochMs': 1793577600000,
-      'adultConfirmed': true,
     };
     for (final receipt in [
-      {...valid, 'noticeVersion': ''},
-      {...valid, 'acceptedAtEpochMs': -1},
-      {...valid, 'acceptedAtEpochMs': 'yesterday'},
-      {...valid, 'adultConfirmed': false},
-      {'noticeVersion': 'v1'},
+      {...old, 'adultConfirmed': false},
+      {...old, 'adultConfirmed': 'true'},
+      {...old, 'adultConfirmed': false, 'guardianApproval': '   '},
+      {...old, 'adultConfirmed': true, 'guardianApproval': 'token'},
     ]) {
       messenger.setMockMethodCallHandler(channel, (_) async => receipt);
       await expectLater(store.readConsent(), throwsFormatException);
@@ -57,7 +117,7 @@ void main() {
   });
 
   test(
-    'only an affirmative adult choice reaches storage; no birth date is sent',
+    'only affirmative minimum age reaches storage, without adult or birth date',
     () async {
       final calls = <MethodCall>[];
       messenger.setMockMethodCallHandler(channel, (call) async {
@@ -65,19 +125,22 @@ void main() {
         return null;
       });
       await expectLater(
-        store.saveConsent(noticeVersion: 'v1', adultConfirmed: false),
+        store.saveConsent(noticeVersion: current, minimumAgeConfirmed: false),
         throwsFormatException,
       );
       await expectLater(
-        store.saveConsent(noticeVersion: '', adultConfirmed: true),
+        store.saveConsent(noticeVersion: '', minimumAgeConfirmed: true),
         throwsFormatException,
       );
       expect(calls, isEmpty);
-      await store.saveConsent(noticeVersion: 'v1', adultConfirmed: true);
+      await store.saveConsent(
+        noticeVersion: current,
+        minimumAgeConfirmed: true,
+      );
       expect(calls.single.method, 'saveConsent');
       expect(calls.single.arguments, {
-        'noticeVersion': 'v1',
-        'adultConfirmed': true,
+        'noticeVersion': current,
+        'minimumAgeConfirmed': true,
       });
     },
   );
@@ -88,123 +151,35 @@ void main() {
     });
     await expectLater(store.readConsent(), throwsA(isA<PlatformException>()));
     await expectLater(
-      store.saveConsent(noticeVersion: 'v1', adultConfirmed: true),
+      store.saveConsent(noticeVersion: current, minimumAgeConfirmed: true),
       throwsA(isA<PlatformException>()),
     );
     await expectLater(store.deleteAll(), throwsA(isA<PlatformException>()));
   });
 
-  test(
-    'stored guardian approval never grants entry without signature validation',
-    () async {
-      messenger.setMockMethodCallHandler(
-        channel,
-        (_) async => {
-          'noticeVersion': 'v1',
-          'acceptedAtEpochMs': 1793577600000,
-          'adultConfirmed': false,
-          'guardianApproval': 'unverified-stored-token',
-        },
-      );
-      final receipt = (await store.readConsent())!;
-      expect(receipt.guardianApproval, 'unverified-stored-token');
-      expect(receipt.accepts('v1'), isFalse);
-    },
-  );
-
-  test('adult and guardian consent alternatives cannot be mixed', () async {
-    messenger.setMockMethodCallHandler(channel, (_) async => null);
-    await expectLater(
-      store.saveConsent(
-        noticeVersion: 'v1',
+  test('legacy constructor defaults cannot grant current eligibility', () {
+    for (final receipt in [
+      PrivacyConsent(noticeVersion: current, acceptedAt: DateTime.utc(2026)),
+      PrivacyConsent(
+        noticeVersion: current,
+        acceptedAt: DateTime.utc(2026),
         adultConfirmed: true,
+      ),
+      PrivacyConsent(
+        noticeVersion: current,
+        acceptedAt: DateTime.utc(2026),
         guardianApproval: 'token',
       ),
-      throwsFormatException,
-    );
-    await expectLater(
-      store.saveConsent(
-        noticeVersion: 'v1',
-        adultConfirmed: false,
-        guardianApproval: '  ',
+      PrivacyConsent(
+        noticeVersion: current,
+        acceptedAt: DateTime.utc(2026),
+        minimumAgeConfirmed: true,
+        adultConfirmed: true,
       ),
-      throwsFormatException,
-    );
+    ]) {
+      expect(receipt.accepts(current), isFalse);
+    }
   });
-
-  test('guardian token reaches storage only through explicit save', () async {
-    messenger.setMockMethodCallHandler(channel, (call) async {
-      expect(call.method, 'saveConsent');
-      expect(call.arguments, {
-        'noticeVersion': 'v1',
-        'adultConfirmed': false,
-        'guardianApproval': 'signed-token',
-      });
-      return null;
-    });
-    await store.saveConsent(
-      noticeVersion: 'v1',
-      adultConfirmed: false,
-      guardianApproval: 'signed-token',
-    );
-  });
-
-  test(
-    'approval nonce read does not create one and create validates native output',
-    () async {
-      var created = false;
-      const requestId = 'e620bc6d-fc61-4a7f-b708-796de85077fb';
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        if (call.method == 'readApprovalRequestId') {
-          return created ? requestId : null;
-        }
-        expect(call.method, 'getOrCreateApprovalRequestId');
-        created = true;
-        return requestId;
-      });
-      expect(await store.readApprovalRequestId(), isNull);
-      expect(created, isFalse);
-      expect(await store.getOrCreateApprovalRequestId(), requestId);
-      expect(await store.readApprovalRequestId(), requestId);
-      messenger.setMockMethodCallHandler(channel, (_) async => 'invalid-id');
-      await expectLater(
-        store.getOrCreateApprovalRequestId(),
-        throwsFormatException,
-      );
-    },
-  );
-
-  test(
-    'email opens an explicit draft and reports missing email apps',
-    () async {
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        expect(call.method, 'composeEmail');
-        expect(call.arguments, {
-          'to': 'privacy@example.org',
-          'subject': 'My request',
-          'body': 'Please help.',
-        });
-        return true;
-      });
-      expect(
-        await store.composeEmail(
-          to: 'privacy@example.org',
-          subject: 'My request',
-          body: 'Please help.',
-        ),
-        isTrue,
-      );
-      messenger.setMockMethodCallHandler(channel, (_) async => false);
-      expect(
-        await store.composeEmail(
-          to: 'privacy@example.org',
-          subject: 'My request',
-          body: 'Please help.',
-        ),
-        isFalse,
-      );
-    },
-  );
 
   test('withdrawal requests one atomic erase of profile and consent', () async {
     var cleared = false;

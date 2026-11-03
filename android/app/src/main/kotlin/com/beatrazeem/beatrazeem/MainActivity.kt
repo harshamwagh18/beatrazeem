@@ -1,9 +1,9 @@
 package com.beatrazeem.beatrazeem
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.content.ActivityNotFoundException
-import android.net.Uri
+import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.projection.MediaProjectionManager
@@ -16,12 +16,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
-import java.util.UUID
 
 class MainActivity : FlutterActivity() {
     private var output: SynchronizedAudioPlayer? = null
     private var pendingKaraoke = false
     private var pending: MethodChannel.Result? = null
+    private var notificationPrompted = false
     private val main = Handler(Looper.getMainLooper())
     private val profileIo = Executors.newSingleThreadExecutor()
     private lateinit var localNetwork: LocalNetwork
@@ -68,22 +68,7 @@ class MainActivity : FlutterActivity() {
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "beatrazeem/privacy")
             .setMethodCallHandler { call, result ->
-                if (call.method == "composeEmail") {
-                    try {
-                        val to = call.argument<String>("to") ?: error("An email address is required.")
-                        val subject = call.argument<String>("subject") ?: ""
-                        val body = call.argument<String>("body") ?: ""
-                        require(to.length <= 254 && to.matches(Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")) &&
-                            subject.length <= 200 && body.length <= 32768) { "The email draft is invalid." }
-                        val uri = Uri.parse("mailto:${Uri.encode(to, "@")}?subject=${Uri.encode(subject)}&body=${Uri.encode(body)}")
-                        startActivity(Intent(Intent.ACTION_SENDTO, uri))
-                        result.success(true)
-                    } catch (_: ActivityNotFoundException) {
-                        result.success(false)
-                    } catch (error: Exception) {
-                        result.error("privacy", error.message ?: "Could not open an email draft.", null)
-                    }
-                } else if (call.method !in setOf("readConsent", "saveConsent", "deleteAll", "readApprovalRequestId", "getOrCreateApprovalRequestId")) {
+                if (call.method !in setOf("readConsent", "saveConsent", "deleteAll")) {
                     result.notImplemented()
                 } else {
                     profileIo.execute {
@@ -93,52 +78,62 @@ class MainActivity : FlutterActivity() {
                             val preferences = getSharedPreferences("com.beatrazeem.beatrazeem.profile", MODE_PRIVATE)
                             when (call.method) {
                                 "readConsent" -> {
-                                    val version = preferences.getString("privacyNoticeVersion", null)
-                                    val value = if (version == null) null else {
-                                        val acceptedAt = preferences.getLong("privacyAcceptedAt", 0L)
-                                        val adult = preferences.getBoolean("privacyAdultConfirmed", false)
-                                        val guardian = preferences.getString("privacyGuardianApproval", null)
-                                        check(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) && acceptedAt > 0 &&
-                                            (if (adult) guardian == null else !guardian.isNullOrBlank() && guardian.length <= 8192)) {
-                                            "The saved privacy choice is invalid."
+                                    val value = PrivacyWriteGuard.read {
+                                        val version = preferences.getString("privacyNoticeVersion", null)
+                                        if (version == null) null else {
+                                            val acceptedAt = preferences.getLong("privacyAcceptedAt", 0L)
+                                            val currentSchema = preferences.contains("privacyMinimumAgeConfirmed")
+                                            val minimumAge = preferences.getBoolean("privacyMinimumAgeConfirmed", false)
+                                            val adult = preferences.getBoolean("privacyAdultConfirmed", false)
+                                            val guardian = preferences.getString("privacyGuardianApproval", null)
+                                            val validChoice = if (currentSchema) {
+                                                minimumAge && !adult && guardian == null
+                                            } else {
+                                                if (adult) guardian == null else !guardian.isNullOrBlank() && guardian.length <= 8192
+                                            }
+                                            check(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) &&
+                                                acceptedAt in 1L..8640000000000000L && validChoice) {
+                                                "The saved privacy choice is invalid."
+                                            }
+                                            // Reading a legacy receipt never upgrades it into a new age declaration.
+                                            if (currentSchema) {
+                                                mapOf("noticeVersion" to version, "acceptedAtEpochMs" to acceptedAt,
+                                                    "minimumAgeConfirmed" to minimumAge)
+                                            } else {
+                                                mapOf("noticeVersion" to version, "acceptedAtEpochMs" to acceptedAt,
+                                                    "adultConfirmed" to adult, "guardianApproval" to guardian)
+                                            }
                                         }
-                                        mapOf("noticeVersion" to version, "acceptedAtEpochMs" to acceptedAt, "adultConfirmed" to adult,
-                                            "guardianApproval" to guardian)
                                     }
                                     main.post { result.success(value) }
                                 }
                                 "saveConsent" -> {
                                     val version = call.argument<String>("noticeVersion") ?: error("A privacy notice version is required.")
-                                    val adult = call.argument<Boolean>("adultConfirmed") == true
-                                    val guardian = call.argument<String>("guardianApproval")
-                                    require(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) &&
-                                        (if (adult) guardian == null else !guardian.isNullOrBlank() && guardian.length <= 8192 &&
-                                            preferences.contains("privacyApprovalRequestId"))) {
-                                        "Confirm adult eligibility or provide verified guardian approval."
+                                    val minimumAge = call.argument<Boolean>("minimumAgeConfirmed") == true
+                                    require(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) && minimumAge) {
+                                        "Confirm that you are 9 or older."
                                     }
-                                    check(preferences.edit()
+                                    // Store the new self-declaration without representing the user as an adult.
+                                    // Replacing consent also removes all obsolete guardian data in one write.
+                                    check(PrivacyWriteGuard.commit {
+                                        preferences.edit()
                                         .putString("privacyNoticeVersion", version)
                                         .putLong("privacyAcceptedAt", System.currentTimeMillis())
-                                        .putBoolean("privacyAdultConfirmed", adult)
-                                        .putString("privacyGuardianApproval", guardian)
-                                        .commit()) { "Could not save your privacy choice. Please try again." }
+                                        .putBoolean("privacyMinimumAgeConfirmed", minimumAge)
+                                        .remove("privacyAdultConfirmed")
+                                        .remove("privacyGuardianApproval")
+                                        .remove("privacyApprovalRequestId")
+                                        .commit()
+                                    }) { "Could not save your privacy choice. Please try again." }
                                     main.post { result.success(null) }
                                 }
                                 "deleteAll" -> {
                                     // No erased consent receipt is retained.
-                                    check(preferences.edit().clear().commit()) { "Could not delete your saved data. Please try again." }
-                                    main.post { result.success(null) }
-                                }
-                                "readApprovalRequestId", "getOrCreateApprovalRequestId" -> {
-                                    var requestId = preferences.getString("privacyApprovalRequestId", null)
-                                    if (requestId == null && call.method == "getOrCreateApprovalRequestId") {
-                                        requestId = UUID.randomUUID().toString()
-                                        check(preferences.edit().putString("privacyApprovalRequestId", requestId).commit()) {
-                                            "Could not save the approval request. Please try again."
-                                        }
+                                    check(PrivacyWriteGuard.commit {
+                                        preferences.edit().clear().commit() }) {
+                                        "Could not delete your saved data. Please try again."
                                     }
-                                    val value = requestId
-                                    main.post { result.success(value) }
+                                    main.post { result.success(null) }
                                 }
                             }
                         } catch (error: Exception) {
@@ -210,29 +205,56 @@ class MainActivity : FlutterActivity() {
                         } else {
                             pendingKaraoke = call.argument<Boolean>("karaoke") == true
                             pending = result
-                            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                            try {
-                                // The room shares sound while the creator switches apps.
-                                // Request display-wide consent on Android 14+, avoiding
-                                // accidentally binding the session to Beatrazeem's window.
-                                // No virtual display or video surface is created.
-                                val permission = if (Build.VERSION.SDK_INT >= 34) {
-                                    manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-                                } else manager.createScreenCaptureIntent()
-                                startActivityForResult(permission, 7301)
-                            } catch (error: Exception) {
-                                pending = null
-                                result.error("permission", error.message, null)
+                            if (Build.VERSION.SDK_INT >= 33 && !notificationPrompted &&
+                                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPrompted = true
+                                try {
+                                    requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7302)
+                                } catch (_: Exception) {
+                                    // Notification permission is optional for foreground capture.
+                                    requestProjectionPermission()
+                                }
+                            } else {
+                                requestProjectionPermission()
                             }
                         }
                     }
                     "stop" -> {
+                        pending?.error("cancelled", "Device audio sharing was cancelled.", null)
+                        pending = null
                         stopService(Intent(this, CaptureService::class.java))
                         result.success(null)
                     }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun requestProjectionPermission() {
+        val result = pending ?: return
+        if (Build.VERSION.SDK_INT < 29) {
+            pending = null
+            result.error("unsupported", "Device-audio sharing needs Android 10 or newer.", null)
+            return
+        }
+        try {
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            // Share sound while switching apps, without creating a video surface.
+            val permission = if (Build.VERSION.SDK_INT >= 34) {
+                manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+            } else manager.createScreenCaptureIntent()
+            startActivityForResult(permission, 7301)
+        } catch (error: Exception) {
+            pending = null
+            result.error("permission", error.message, null)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Denying notifications must not prevent audio sharing. Android still
+        // exposes the foreground session in its active-apps/task-manager UI.
+        if (requestCode == 7302) requestProjectionPermission()
     }
 
     @Deprecated("Platform projection result bridge")
@@ -243,6 +265,10 @@ class MainActivity : FlutterActivity() {
         pending = null
         if (resultCode != Activity.RESULT_OK || data == null) {
             result.error("cancelled", "Device audio sharing was cancelled.", null)
+            return
+        }
+        if (Build.VERSION.SDK_INT < 29) {
+            result.error("unsupported", "Device-audio sharing needs Android 10 or newer.", null)
             return
         }
         CaptureService.ready = { error ->

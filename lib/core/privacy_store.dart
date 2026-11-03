@@ -1,46 +1,59 @@
 import 'package:flutter/services.dart';
 
-/// Local proof of the notice accepted on this device, without a birth date.
+/// Local notice receipt. The age declaration is not age or identity verification.
 class PrivacyConsent {
   const PrivacyConsent({
     required this.noticeVersion,
     required this.acceptedAt,
-    required this.adultConfirmed,
+    this.minimumAgeConfirmed = false,
+    this.adultConfirmed = false,
     this.guardianApproval,
   });
 
   final String noticeVersion;
   final DateTime acceptedAt;
+  final bool minimumAgeConfirmed;
+
+  /// Retained only to read older receipts without turning them into a new choice.
   final bool adultConfirmed;
   final String? guardianApproval;
 
-  /// Guardian receipts require signature/nonce validation by the caller. Merely
-  /// finding a token in storage must never grant entry to a child.
   bool accepts(String currentNoticeVersion) =>
-      adultConfirmed && noticeVersion == currentNoticeVersion;
+      minimumAgeConfirmed &&
+      !adultConfirmed &&
+      guardianApproval == null &&
+      noticeVersion == currentNoticeVersion;
 
   factory PrivacyConsent.fromMap(Map<dynamic, dynamic> values) {
     final version = values['noticeVersion'];
     final time = values['acceptedAtEpochMs'];
+    final minimumAge = values['minimumAgeConfirmed'];
     final adult = values['adultConfirmed'];
     final approval = values['guardianApproval'];
+    final currentSchema = values.containsKey('minimumAgeConfirmed');
+    final validChoice = currentSchema
+        ? minimumAge == true &&
+              (adult == null || adult == false) &&
+              approval == null
+        : adult is bool &&
+              (adult
+                  ? approval == null
+                  : approval is String &&
+                        approval.trim().isNotEmpty &&
+                        approval.length <= 8192);
     if (version is! String ||
         !_validVersion(version) ||
         time is! int ||
         time <= 0 ||
         time > 8640000000000000 ||
-        adult is! bool ||
-        (adult
-            ? approval != null
-            : approval is! String ||
-                  approval.trim().isEmpty ||
-                  approval.length > 8192)) {
+        !validChoice) {
       throw const FormatException('The saved privacy choice is invalid.');
     }
     return PrivacyConsent(
       noticeVersion: version,
       acceptedAt: DateTime.fromMillisecondsSinceEpoch(time, isUtc: true),
-      adultConfirmed: adult,
+      minimumAgeConfirmed: currentSchema,
+      adultConfirmed: adult == true,
       guardianApproval: approval as String?,
     );
   }
@@ -64,56 +77,18 @@ class PrivacyStore {
 
   Future<void> saveConsent({
     required String noticeVersion,
-    required bool adultConfirmed,
-    String? guardianApproval,
+    required bool minimumAgeConfirmed,
   }) async {
-    if (!_validVersion(noticeVersion) ||
-        (adultConfirmed
-            ? guardianApproval != null
-            : guardianApproval == null ||
-                  guardianApproval.trim().isEmpty ||
-                  guardianApproval.length > 8192)) {
-      throw const FormatException(
-        'Confirm adult eligibility or provide verified guardian approval.',
-      );
+    if (!_validVersion(noticeVersion) || !minimumAgeConfirmed) {
+      throw const FormatException('Confirm that you are 9 or older.');
     }
     await _channel.invokeMethod<void>('saveConsent', {
       'noticeVersion': noticeVersion,
-      'adultConfirmed': adultConfirmed,
-      'guardianApproval': ?guardianApproval,
+      'minimumAgeConfirmed': minimumAgeConfirmed,
     });
   }
 
   /// Call only after stopping capture, playback and room connections. This also
-  /// removes the username; a subsequent start must ask for consent again.
+  /// removes the username and any legacy guardian data; consent is needed again.
   Future<void> deleteAll() => _channel.invokeMethod<void>('deleteAll');
-
-  Future<String?> readApprovalRequestId() =>
-      _channel.invokeMethod<String>('readApprovalRequestId');
-
-  Future<String> getOrCreateApprovalRequestId() async {
-    final value = await _channel.invokeMethod<String>(
-      'getOrCreateApprovalRequestId',
-    );
-    if (value == null ||
-        !RegExp(
-          r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-        ).hasMatch(value)) {
-      throw const FormatException('Could not create a valid approval request.');
-    }
-    return value;
-  }
-
-  /// Opens a draft in the user's email app; never sends it automatically.
-  Future<bool> composeEmail({
-    required String to,
-    required String subject,
-    required String body,
-  }) async =>
-      await _channel.invokeMethod<bool>('composeEmail', {
-        'to': to,
-        'subject': subject,
-        'body': body,
-      }) ??
-      false;
 }

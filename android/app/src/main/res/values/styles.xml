@@ -5,13 +5,11 @@
         <item name="android:statusBarColor">@color/beatrazeem_background</item>
         <item name="android:navigationBarColor">@color/beatrazeem_background</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@color/beatrazeem_background</item>
         <item name="android:statusBarColor">@color/beatrazeem_background</item>
         <item name="android:navigationBarColor">@color/beatrazeem_background</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

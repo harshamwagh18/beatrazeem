@@ -1,7 +1,9 @@
 package com.beatrazeem.beatrazeem
 
+import android.Manifest
 import android.app.*
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.*
 import android.media.projection.MediaProjection
@@ -52,6 +54,11 @@ class CaptureService : Service() {
         if (running) return START_NOT_STICKY
         try {
             if (Build.VERSION.SDK_INT < 29 || intent == null) error("Android 10 or newer is required.")
+            // Playback capture also needs RECORD_AUDIO. The permission may
+            // have changed while Android's sharing prompt was open.
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                throw SecurityException("Microphone permission is unavailable.")
+            }
             val karaoke = intent.getBooleanExtra("karaoke", false)
             val notifications = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notifications.createNotificationChannel(NotificationChannel("sharing", "Audio sharing", NotificationManager.IMPORTANCE_LOW))
@@ -165,7 +172,14 @@ class CaptureService : Service() {
                 }
             }, "BeatrazeemAudio").apply { start() }
             ready?.invoke(null); ready = null
+        } catch (_: SecurityException) {
+            running = false
+            ready?.invoke("Audio sharing permission is unavailable or was revoked. Allow microphone access in Android app settings, then approve audio sharing again."); ready = null
+            // onDestroy releases any recorder, projection, wake lock and
+            // foreground notification already created before permission failed.
+            stopSelf()
         } catch (error: Exception) {
+            running = false
             ready?.invoke(error.message ?: "Could not share device audio."); ready = null
             stopSelf()
         }

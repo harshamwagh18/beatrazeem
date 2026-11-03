@@ -10,33 +10,30 @@ import 'host_microphone_test.dart'
 
 class _PrivacyTestStore extends PrivacyStore {
   _PrivacyTestStore({this.profile, bool accepted = false}) {
-    if (accepted) receipt = adultReceipt;
+    if (accepted) receipt = ageReceipt;
   }
-  static PrivacyConsent get adultReceipt => PrivacyConsent(
+  static PrivacyConsent get ageReceipt => PrivacyConsent(
     noticeVersion: PrivacyPolicy.noticeVersion,
     acceptedAt: DateTime.utc(2026, 11, 2),
-    adultConfirmed: true,
+    minimumAgeConfirmed: true,
   );
   final TestProfileStore? profile;
   PrivacyConsent? receipt;
-  bool failSave = false, failDelete = false, emailAvailable = false;
+  bool failSave = false, failDelete = false;
   int saves = 0, deletes = 0;
-  String? emailTo, emailSubject, emailBody;
   @override
   Future<PrivacyConsent?> readConsent() async => receipt;
   @override
   Future<void> saveConsent({
     required String noticeVersion,
-    required bool adultConfirmed,
-    String? guardianApproval,
+    required bool minimumAgeConfirmed,
   }) async {
     if (failSave) throw StateError('Privacy save failed');
     saves++;
     receipt = PrivacyConsent(
       noticeVersion: noticeVersion,
       acceptedAt: DateTime.now().toUtc(),
-      adultConfirmed: adultConfirmed,
-      guardianApproval: guardianApproval,
+      minimumAgeConfirmed: minimumAgeConfirmed,
     );
   }
 
@@ -47,30 +44,12 @@ class _PrivacyTestStore extends PrivacyStore {
     receipt = null;
     profile?.name = null;
   }
-
-  @override
-  Future<String?> readApprovalRequestId() async =>
-      'e620bc6d-fc61-4a7f-b708-796de85077fb';
-  @override
-  Future<String> getOrCreateApprovalRequestId() async =>
-      (await readApprovalRequestId())!;
-  @override
-  Future<bool> composeEmail({
-    required String to,
-    required String subject,
-    required String body,
-  }) async {
-    emailTo = to;
-    emailSubject = subject;
-    emailBody = body;
-    return emailAvailable;
-  }
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const adultChoice = 'I am 18 or older and can give consent for myself.';
-  const adultAgreement =
+  const ageChoice = 'I am 9 years old or older.';
+  const agreement =
       'I agree to the personal-data uses described in this notice.';
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -135,7 +114,7 @@ void main() {
   }
 
   testWidgets(
-    'adult consent starts unchecked and needs both affirmative choices',
+    'age 9+ and notice agreement start unchecked and are both required',
     (tester) async {
       final store = _PrivacyTestStore();
       var accepted = false;
@@ -158,9 +137,9 @@ void main() {
             .every((item) => item.value == false),
         isTrue,
       );
-      await tap(tester, adultChoice);
+      await tap(tester, ageChoice);
       expect(button().onPressed, isNull);
-      await tap(tester, adultAgreement);
+      await tap(tester, agreement);
       expect(button().onPressed, isNotNull);
       await tap(tester, 'Accept and continue');
       expect(store.saves, 1);
@@ -191,70 +170,84 @@ void main() {
     expect(find.text('Accept and continue'), findsOneWidget);
     expect(find.text('Create a room'), findsNothing);
     expect(room.connected, isFalse);
-    await tap(tester, adultChoice);
-    await tap(tester, adultAgreement);
+    await tap(tester, ageChoice);
+    await tap(tester, agreement);
     await tap(tester, 'Accept and continue');
     expect(find.text('Hey, Existing name.'), findsOneWidget);
     expect(store.saves, 1);
     await close(tester);
   });
 
-  testWidgets('stored child receipt is reverified before room access', (
+  for (final legacyAdult in [true, false]) {
+    testWidgets(
+      'earlier ${legacyAdult ? 'adult' : 'guardian'} receipt requires new age confirmation',
+      (tester) async {
+        final profile = TestProfileStore()..name = 'Existing name';
+        final store = _PrivacyTestStore(profile: profile)
+          ..receipt = PrivacyConsent(
+            noticeVersion: '2026-11-02.1',
+            acceptedAt: DateTime.utc(2026, 11, 2),
+            adultConfirmed: legacyAdult,
+            guardianApproval: legacyAdult ? null : 'old-signed-token',
+          );
+        final room = TestRoom();
+        await setup(
+          tester,
+          BeatrazeemApp(
+            studio: Studio(
+              profileStore: profile,
+              privacyStore: store,
+              room: room,
+              audio: TestAudio(),
+              discovery: TestDiscovery(),
+            ),
+          ),
+        );
+        expect(find.text('Accept and continue'), findsOneWidget);
+        expect(find.text('Create a room'), findsNothing);
+        expect(room.connected, isFalse);
+        expect(store.saves, 0);
+        await tap(tester, agreement);
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Accept and continue'),
+              )
+              .onPressed,
+          isNull,
+        );
+        await tap(tester, ageChoice);
+        await tap(tester, 'Accept and continue');
+        expect(find.text('Hey, Existing name.'), findsOneWidget);
+        expect(profile.name, 'Existing name');
+        expect(store.receipt!.minimumAgeConfirmed, isTrue);
+        expect(store.receipt!.adultConfirmed, isFalse);
+        expect(store.receipt!.guardianApproval, isNull);
+        await close(tester);
+      },
+    );
+  }
+
+  testWidgets('current 9+ receipt opens saved profile without asking again', (
     tester,
   ) async {
-    final profile = TestProfileStore()..name = 'Existing name';
-    final store = _PrivacyTestStore(profile: profile)
-      ..receipt = PrivacyConsent(
-        noticeVersion: PrivacyPolicy.noticeVersion,
-        acceptedAt: DateTime.utc(2026, 11, 2),
-        adultConfirmed: false,
-        guardianApproval: 'invalid-stored-token',
-      );
-    final room = TestRoom();
+    final profile = TestProfileStore()..name = 'Razeem';
+    final store = _PrivacyTestStore(profile: profile, accepted: true);
     await setup(
       tester,
       BeatrazeemApp(
         studio: Studio(
           profileStore: profile,
           privacyStore: store,
-          room: room,
+          room: TestRoom(),
           audio: TestAudio(),
           discovery: TestDiscovery(),
         ),
       ),
     );
-    expect(find.text('Accept and continue'), findsOneWidget);
-    expect(find.text('Create a room'), findsNothing);
-    expect(room.connected, isFalse);
+    expect(find.text('Hey, Razeem.'), findsOneWidget);
+    expect(find.text('Accept and continue'), findsNothing);
     expect(store.saves, 0);
-    await close(tester);
-  });
-
-  testWidgets('invalid guardian approval cannot save consent or enter', (
-    tester,
-  ) async {
-    final store = _PrivacyTestStore();
-    var accepted = false;
-    await setup(
-      tester,
-      screen(
-        store,
-        accepted: () async {
-          accepted = true;
-        },
-      ),
-    );
-    await tap(tester, 'Parent or lawful guardian approval');
-    await tester.ensureVisible(find.byType(TextField));
-    await tester.enterText(find.byType(TextField), 'not-a-signed-approval');
-    await tap(
-      tester,
-      'The verified guardian approved this notice and this phone’s use.',
-    );
-    await tap(tester, 'Accept and continue');
-    expect(find.textContaining('Approval is invalid'), findsOneWidget);
-    expect(store.saves, 0);
-    expect(accepted, isFalse);
     await close(tester);
   });
 
@@ -270,8 +263,8 @@ void main() {
         },
       ),
     );
-    await tap(tester, adultChoice);
-    await tap(tester, adultAgreement);
+    await tap(tester, ageChoice);
+    await tap(tester, agreement);
     await tap(tester, 'Accept and continue');
     expect(find.textContaining('Privacy save failed'), findsOneWidget);
     expect(accepted, isFalse);
@@ -330,34 +323,35 @@ void main() {
     );
   }
 
-  testWidgets(
-    'missing email app offers a copyable request without submitting it',
-    (tester) async {
-      final store = _PrivacyTestStore();
-      await setup(tester, screen(store, gate: false));
-      await tap(tester, 'Open email request');
-      expect(store.emailTo, PrivacyPolicy.contactEmail);
-      expect(store.emailSubject, contains('Access to my data'));
-      expect(find.textContaining('No email app is available'), findsOneWidget);
-      await tap(tester, 'Copy request');
-      expect(clipboard, contains('To: ${PrivacyPolicy.contactEmail}'));
-      expect(clipboard, contains('Access to my data'));
-      expect(store.saves, 0);
-      await close(tester);
-    },
-  );
-  testWidgets('guardian email fallback includes the phone approval reference', (
-    tester,
-  ) async {
-    final store = _PrivacyTestStore();
-    await setup(tester, screen(store));
-    await tap(tester, 'Parent or lawful guardian approval');
-    await tap(tester, 'Request guardian verification');
-    await tap(tester, 'Copy request');
-    expect(clipboard, contains('Beatrazeem guardian approval request'));
-    expect(clipboard, contains(await store.readApprovalRequestId()));
-    expect(clipboard, contains(PrivacyPolicy.noticeVersion));
-    expect(store.saves, 0);
-    await close(tester);
-  });
+  for (final gate in [true, false]) {
+    testWidgets(
+      'privacy ${gate ? 'onboarding' : 'centre'} has contact line without removed controls',
+      (tester) async {
+        final store = _PrivacyTestStore();
+        await setup(tester, screen(store, gate: gate));
+        expect(find.text('Parent or lawful guardian approval'), findsNothing);
+        expect(find.text('Request guardian verification'), findsNothing);
+        expect(find.text('Privacy requests & complaints'), findsNothing);
+        expect(find.text('Open email request'), findsNothing);
+        expect(find.text('Copy request'), findsNothing);
+        expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+        final contact = tester.widget<SelectableText>(
+          find.byKey(const ValueKey('privacy-contact')),
+        );
+        expect(
+          contact.data,
+          'If you have any queries, contact gamelauncer223@gmail.com.',
+        );
+        expect(
+          find.text('Withdraw consent & delete local data'),
+          findsOneWidget,
+        );
+        await tap(tester, 'Data on this phone');
+        await tap(tester, 'Copy my data summary');
+        expect(clipboard, contains('Beatrazeem local data'));
+        expect(store.saves, 0);
+        await close(tester);
+      },
+    );
+  }
 }

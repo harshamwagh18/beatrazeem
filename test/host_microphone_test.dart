@@ -16,21 +16,19 @@ class TestPrivacyStore extends PrivacyStore {
   PrivacyConsent? consent = PrivacyConsent(
     noticeVersion: PrivacyPolicy.noticeVersion,
     acceptedAt: DateTime.utc(2026, 11, 2),
-    adultConfirmed: true,
+    minimumAgeConfirmed: true,
   );
   @override
   Future<PrivacyConsent?> readConsent() async => consent;
   @override
   Future<void> saveConsent({
     required String noticeVersion,
-    required bool adultConfirmed,
-    String? guardianApproval,
+    required bool minimumAgeConfirmed,
   }) async {
     consent = PrivacyConsent(
       noticeVersion: noticeVersion,
       acceptedAt: DateTime.now().toUtc(),
-      adultConfirmed: adultConfirmed,
-      guardianApproval: guardianApproval,
+      minimumAgeConfirmed: minimumAgeConfirmed,
     );
   }
 

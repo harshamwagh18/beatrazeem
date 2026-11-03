@@ -1,41 +1,42 @@
-# Privacy update 0.9.0 - change map
+# Privacy update 0.9.1 — change map
 
-Updated 3 November 2026 for the DPDP readiness update. This map identifies the implementation work and the operational requirements that remain. It is not a legal-compliance certificate. Final app build and integration results belong in `VALIDATION.md`.
+Updated 4 November 2026 for version 0.9.1 (build 17). This update simplifies the privacy screen and changes the age declaration to 9 or older at the user's request. It removes the previous verified-guardian onboarding route. It is not a legal-compliance certificate. Final build and test results are recorded in [Validation](VALIDATION.md).
 
-## App changes and their locations
+## What changed and where
 
-| Change | Location | Effect and limits |
+| Change | Location | Result |
 |---|---|---|
-| Operator identity and standalone notice | `lib/core/privacy_policy.dart` | Identifies gamelauncher and gamelauncher223@gmail.com; explains data, purposes, recipients, storage, choice, rights and complaints. Mailbox operation must be established by the operator. |
-| Privacy onboarding and later review | `lib/ui/privacy_screen.dart`, `lib/main.dart` | Presents notice before profile/room processing, requires affirmative choice and offers later data/rights access. Integration must fail closed on missing or expired approval. |
-| Local consent receipt and deletion | `lib/core/privacy_store.dart`, Android `MainActivity.kt` | Saves notice version, local acceptance time and eligibility/guardian decision; supports removal of local profile and privacy data. This does not delete independently held recipient recordings or operator correspondence. |
-| Existing profile handling | `lib/core/profile_store.dart`, `lib/main.dart` | Upgraded users must pass current consent/eligibility checks before resuming room use; profile correction remains available. |
-| Guardian approval verification | `lib/core/guardian_approval.dart` | Checks an Ed25519 signature, device request ID, notice version, issue time and expiry. Signature validation authenticates the operator decision; it does not independently verify the guardian's identity, adulthood, authority or consent. |
-| Operator approval issuance | `tools/guardian_approval.py` | Signs only after explicit confirmations of the four required operator checks. Default approval lasts 30 days, with a maximum of 90 days. Private keys remain outside the app/source repository. |
-| Protection against backup restoration | Android `AndroidManifest.xml` and backup exclusion XML | Excludes app privacy/profile data from configured backup/transfer mechanisms; actual manufacturer behavior needs device testing. |
-| Encrypted room connection | `lib/core/secure_room_socket.dart`, `lib/core/transport.dart` and `lib/ui/peer_verification_dialog.dart` | Protects room messages after authenticated connection verification. Room discovery and traffic metadata can remain visible. All peers need the compatible app version. |
-| Privacy requests and complaints | Privacy screen and Android contact action | Provides the configured contact and user-initiated request workflow. Opening a draft does not send, acknowledge, resolve or register a request. |
-| Operational procedures | `docs/PRIVACY_OPERATIONS.md` | Covers request handling, guardian checks, incident response, retention questions and release evidence. These procedures require actual operator adoption. |
+| Remove guardian approval controls | `lib/ui/privacy_screen.dart`, `lib/main.dart` | Removes guardian selection, verification-request and approval-entry controls. The current onboarding flow does not accept guardian approvals. |
+| Minimum age 9 | `lib/ui/privacy_screen.dart`, `lib/core/privacy_store.dart`, Android `MainActivity.kt` | Requires an unchecked minimum-age confirmation and a separate notice agreement. Stores minimum-age confirmation, not a false adult or verified-parent decision. No birth date is collected. |
+| Replace request/complaint controls | `lib/ui/privacy_screen.dart` | Removes request categories, email-draft and copy-request buttons. Displays selectable text: “If you have any queries, contact gamelauncer223@gmail.com.” |
+| Updated contact and notice | `lib/core/privacy_policy.dart`, `docs/PRIVACY_NOTICE.md` | Uses the newly supplied contact address and notice version `2026-11-03.1`; explains the changed age and contact flows. The operator name remains gamelauncher. |
+| Reconfirm after updating | `lib/main.dart`, `lib/core/privacy_store.dart`, Android `MainActivity.kt` | Old adult/guardian receipts cannot silently accept the new notice. The username is retained. Accepting the new notice removes obsolete guardian approval/request data. |
+| Failed-save protection | Android `MainActivity.kt`, `PrivacyWriteGuard.kt`, `PrivacyWriteGuardHarness.kt` | Prevents a failed disk save from granting access through Android's already-updated memory cache after Activity recreation. Eight native checks cover failures, retry, deletion and concurrent reads. |
+| Capture permission recovery | Android `CaptureService.kt` | Rechecks audio permission before capture and reports revoked permission while releasing partially created resources. |
+| Android compatibility | Android `MainActivity.kt`, `AndroidManifest.xml`, `res/values*/styles.xml` | Guards app-audio service startup by Android version, scopes newer navigation-bar styles to Android 8.1+, and requests optional sharing notifications on Android 13+. Declining notifications does not block sharing. Pending sharing requests are cancelled when capture is stopped. |
+| Preserve previous notice | `docs/privacy-notices/2026-11-02.1.md` | Keeps the exact previous notice, including the old contact and guardian process, as historical documentation only. |
+| Updated tests and release information | `test/privacy_ui_test.dart`, `test/privacy_store_test.dart`, shared test setup, `README.md`, `docs/VALIDATION.md` | Covers the new gate, migration and removed controls while retaining withdrawal, storage-failure and audio/network checks. Refer to validation for completed runs and limitations. |
 
-The Android files above are under `android/app/src/main/`. Backup exclusions are `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml`. A UI control and its description are not proof of legal or operational effectiveness.
+Android `MainActivity.kt` is under `android/app/src/main/kotlin/com/beatrazeem/beatrazeem/`.
 
-## Verification evidence
+## Controls retained
 
-The operator utility's five Python tests passed: request/notice/expiry signature binding and tamper rejection, incomplete verification rejection, invalid request/lifetime rejection, prevention of key overwrite, and private-key permission enforcement. Run them with a Python environment containing `cryptography`:
+The local data summary, username correction in Profile, withdrawal with local deletion, encrypted room connections, manual comparison of security codes, authenticated clock messages and configured Android backup exclusions remain. Room audio is still temporarily buffered rather than saved as recordings. Clearing this phone cannot delete independently held recipient recordings or operator correspondence.
 
-```sh
-python3 -m unittest discover -s tools -p 'test_guardian_approval.py' -v
-```
+The historical guardian parser/signing utility and related tests may remain in the source for compatibility/history. They are not a guardian-enrolment service in 0.9.1, and their presence must not be presented as a verified parental-consent feature for this release. Do not issue new approvals expecting this version's onboarding screen to import them.
 
-App tests must additionally cover consent upgrade, decline, save/read/delete failure, no room/audio processing before consent, guardian approval expiry and request binding, withdrawal during an active session, invalid/replayed peer messages, cancellation/mismatch of connection verification, and loss of a room during authentication. Passing simulated checks does not replace physical Android tests or an independent security review.
+## Verification and limits
+
+The native audio checks have been rerun against the current Kotlin sources: 25 timing checks and 11 Karaoke checks passed, including simulated speaker-clock drift and uneven capture timing. No new audio defect was reproduced in those checks and this UI update does not change the audio scheduling design. Full app checks, Android build and signing evidence are recorded in [Validation](VALIDATION.md).
+
+Automated tests cannot establish lag-free acoustic output on physical phones or Bluetooth speakers. The creator's original app playback remains outside Beatrazeem's shared playback buffer. Real-device tests remain necessary.
 
 ## Remaining release requirements
 
-1. Test and staff the privacy inbox and verify the operator's identity/contact presentation.
-2. Exercise a secure guardian verification procedure with an authorized operator; never approve solely because an email claims to be a parent.
-3. Resolve offline revocation and time-manipulation limitations of guardian approvals before claiming fully effective withdrawal for child users.
-4. Obtain a documented retention interpretation under the applicable Act and Rules. Immediate local deletion and transient audio do not by themselves establish compliance with the final Rules' retention provisions.
-5. Establish effective user/Board breach-notification delivery and actual rights, nomination and grievance handling.
-6. Review the final encrypted transport, dependencies and Android behavior, and record release test evidence.
+1. Confirm ownership, delivery and staffing of the newly supplied contact address. Removing the request form does not answer requests received by email.
+2. Resolve requirements for users aged 9–17 and people needing lawful-guardian consent before claiming compliance. A minimum-age checkbox is not verified parental or guardian consent.
+3. Document applicable retention and erasure decisions for app processing and operator-held records.
+4. Establish effective request, nomination, grievance and incident-notification procedures.
+5. Complete physical-device and independent security review for the distributed build.
 
-The legal sources, commencement qualifications and operating procedures are in [Privacy operations](PRIVACY_OPERATIONS.md). The update should be described as added privacy controls and security protections; do not market it as automatically obeying all laws.
+See [Privacy operations](PRIVACY_OPERATIONS.md) for procedures and the dated legal review retained from the preceding release.
