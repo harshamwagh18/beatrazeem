@@ -106,8 +106,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       const SizedBox(height: 10),
       const Text(PrivacyPolicy.operatorName),
       const SizedBox(height: 12),
-      const Text(
-        'Your display name is saved locally. Approved room members receive names and shared audio. You control when sharing starts and can withdraw here.',
+      Text(
+        widget.requiredBeforeUse
+            ? 'Your display name is saved locally. Approved room members receive names and shared audio. You control when sharing starts. Manage your data later from Privacy.'
+            : 'Your display name is saved locally. Approved room members receive names and shared audio. You control when sharing starts and can withdraw here.',
       ),
       ExpansionTile(
         initiallyExpanded: widget.requiredBeforeUse,
@@ -137,29 +139,31 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           child: const Text('Decline and exit'),
         ),
       ],
-      const Divider(height: 32),
-      ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        title: const Text('Data on this phone'),
-        children: [
-          SelectableText(dataSummary),
-          TextButton(
-            onPressed: () =>
-                Clipboard.setData(ClipboardData(text: dataSummary)),
-            child: const Text('Copy my data summary'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-      const SelectableText(
-        'If you have any queries, contact ${PrivacyPolicy.contactEmail}.',
-        key: ValueKey('privacy-contact'),
-      ),
-      const SizedBox(height: 18),
-      OutlinedButton(
-        onPressed: working ? null : withdraw,
-        child: const Text('Withdraw consent & delete local data'),
-      ),
+      if (!widget.requiredBeforeUse) ...[
+        const Divider(height: 32),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: const Text('Data on this phone'),
+          children: [
+            SelectableText(dataSummary),
+            TextButton(
+              onPressed: () =>
+                  Clipboard.setData(ClipboardData(text: dataSummary)),
+              child: const Text('Copy my data summary'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const SelectableText(
+          'If you have any queries, contact ${PrivacyPolicy.contactEmail}.',
+          key: ValueKey('privacy-contact'),
+        ),
+        const SizedBox(height: 18),
+        OutlinedButton(
+          onPressed: working ? null : withdraw,
+          child: const Text('Withdraw consent & delete local data'),
+        ),
+      ],
       if (message != null)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),

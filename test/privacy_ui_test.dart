@@ -309,7 +309,7 @@ void main() {
 
   for (final gate in [true, false]) {
     testWidgets(
-      'privacy ${gate ? 'onboarding' : 'centre'} has contact line without removed controls',
+      'privacy ${gate ? 'onboarding hides' : 'centre retains'} the data and contact footer',
       (tester) async {
         final store = _PrivacyTestStore();
         await setup(tester, screen(store, gate: gate));
@@ -319,20 +319,32 @@ void main() {
         expect(find.text('Open email request'), findsNothing);
         expect(find.text('Copy request'), findsNothing);
         expect(find.byType(DropdownButtonFormField<String>), findsNothing);
-        final contact = tester.widget<SelectableText>(
-          find.byKey(const ValueKey('privacy-contact')),
-        );
-        expect(
-          contact.data,
-          'If you have any queries, contact gamelauncer223@gmail.com.',
-        );
-        expect(
-          find.text('Withdraw consent & delete local data'),
-          findsOneWidget,
-        );
-        await tap(tester, 'Data on this phone');
-        await tap(tester, 'Copy my data summary');
-        expect(clipboard, contains('Beatrazeem local data'));
+        if (gate) {
+          expect(find.text('Data on this phone'), findsNothing);
+          expect(find.text('Copy my data summary'), findsNothing);
+          expect(find.byKey(const ValueKey('privacy-contact')), findsNothing);
+          expect(
+            find.text('Withdraw consent & delete local data'),
+            findsNothing,
+          );
+          expect(find.text('Continue'), findsOneWidget);
+          expect(find.byKey(const ValueKey('terms-statement')), findsOneWidget);
+        } else {
+          final contact = tester.widget<SelectableText>(
+            find.byKey(const ValueKey('privacy-contact')),
+          );
+          expect(
+            contact.data,
+            'If you have any queries, contact gamelauncer223@gmail.com.',
+          );
+          expect(
+            find.text('Withdraw consent & delete local data'),
+            findsOneWidget,
+          );
+          await tap(tester, 'Data on this phone');
+          await tap(tester, 'Copy my data summary');
+          expect(clipboard, contains('Beatrazeem local data'));
+        }
         expect(store.saves, 0);
         await close(tester);
       },

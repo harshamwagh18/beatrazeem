@@ -1,12 +1,12 @@
 # Beatrazeem privacy operations and release requirements
 
-Updated 3 November 2026 for version 0.9.2 (build 18). This document describes the current interface and the operator work that remains. It does not certify legal compliance. A displayed contact, a self-declared age or passing software tests do not establish effective request handling or verified parental consent.
+Updated 3 November 2026 for version 0.9.3 (build 19). This document describes the current interface and the operator work that remains. It does not certify legal compliance. A displayed contact, a self-declared age or passing software tests do not establish effective request handling or verified parental consent.
 
 ## Current release and responsibility
 
 The responsible operator is **gamelauncher**. The user supplied **gamelauncer223@gmail.com** as the new contact for this release. This differs from the preceding address, `gamelauncher223@gmail.com`; the exact previous notice is preserved at [2026-11-02.1](privacy-notices/2026-11-02.1.md). Mailbox ownership, delivery, staffing and operator identity have not been independently verified. Confirm them before distribution.
 
-The privacy screen displays “If you have any queries, contact gamelauncer223@gmail.com.” It no longer has a request-category selector, email-draft button, copy-request button or guardian approval controls. Users send correspondence through their own email app. The local data summary, notice, profile correction and withdrawal/deletion remain available.
+The privacy screen displays “If you have any queries, contact gamelauncer223@gmail.com.” It no longer has a request-category selector, email-draft button, copy-request button or guardian approval controls. Users send correspondence through their own email app. The local data summary, contact footer and withdrawal/deletion are available from Privacy after setup. They are hidden on the initial notice screen. The notice and Profile correction remain available.
 
 Onboarding shows a plain terms-and-conditions statement and a Continue button. There are no checkboxes or age-declaration prompts. Pressing Continue records acceptance of notice **2026-11-04.1** after a successful local save; simply viewing the page does not. No age or adult confirmation is recorded. The existing intended age of 9+ remains described in the notice, but the app does not enforce or verify age and does not provide verified parental consent.
 
@@ -49,7 +49,7 @@ Removing the request form does not remove the need to operate the published cont
 
 ## Children and lawful guardians: changed capability
 
-Version 0.9.2 permits entry after Continue records acceptance of the notice. It does not request an age declaration. It has no guardian-verification request or token-entry flow. No age or identity verification service is connected. This is a material change from 0.9.0, not evidence that child/guardian obligations have been fulfilled.
+Version 0.9.3 permits entry after Continue records acceptance of the notice. It does not request an age declaration. It has no guardian-verification request or token-entry flow. No age or identity verification service is connected. This is a material change from 0.9.0, not evidence that child/guardian obligations have been fulfilled.
 
 Resolve the applicable requirements and provide an effective consent/withdrawal process before claiming verified parental consent or full compliance for child use. Consider users who require a lawful guardian as well as children. Consent from someone operating a microphone does not independently establish consent from every identifiable person whose voice is transmitted.
 
