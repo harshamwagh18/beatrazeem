@@ -27,7 +27,7 @@ class PrivacyScreen extends StatefulWidget {
 }
 
 class _PrivacyScreenState extends State<PrivacyScreen> {
-  bool minimumAge = false, agreed = false, working = false;
+  bool working = false;
   String? message;
 
   Future<void> run(Future<void> Function() action) async {
@@ -54,10 +54,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       'Display name: ${widget.username ?? 'Not saved'}\n'
       'Notice accepted: ${widget.consent?.noticeVersion ?? 'Not accepted'}\n'
       'Accepted at (UTC): ${widget.consent?.acceptedAt.toIso8601String() ?? '—'}\n'
-      'Eligibility: ${widget.consent == null
+      'Agreement: ${widget.consent == null
           ? 'Not confirmed'
-          : widget.consent!.minimumAgeConfirmed
-          ? 'Age 9+ confirmed (self-declared)'
+          : widget.consent!.noticeAccepted
+          ? 'Accepted by continuing'
           : 'Earlier notice — new confirmation required'}\n'
       'Current room: ${widget.roomName ?? 'None'}\n'
       'Current recipients: ${widget.members.isEmpty ? 'None' : widget.members.join(', ')}\n'
@@ -65,10 +65,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       'Prior room/member history is not retained. This summary covers this phone, not emails held by the operator.';
 
   Future<void> accept() => run(() async {
-    if (!agreed || !minimumAge) return;
     await widget.store.saveConsent(
       noticeVersion: PrivacyPolicy.noticeVersion,
-      minimumAgeConfirmed: minimumAge,
+      noticeAccepted: true,
     );
     await widget.onAccepted();
   });
@@ -79,7 +78,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Withdraw and delete local data?'),
         content: const Text(
-          'Sharing stops and this phone leaves its room. The saved name, age confirmation, consent receipt and any earlier guardian approval data are erased. Other phones cannot be remotely erased. Requests already emailed to gamelauncher require a separate erasure request.',
+          'Sharing stops and this phone leaves its room. The saved name, notice receipt and any earlier age or guardian approval data are erased. Other phones cannot be remotely erased. Requests already emailed to gamelauncher require a separate erasure request.',
         ),
         actions: [
           TextButton(
@@ -113,7 +112,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       ExpansionTile(
         initiallyExpanded: widget.requiredBeforeUse,
         tilePadding: EdgeInsets.zero,
-        title: const Text('Read the privacy notice'),
+        title: const Text('Terms and conditions & privacy notice'),
         children: [
           SelectableText(
             PrivacyPolicy.notice,
@@ -124,28 +123,14 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       ),
       if (widget.requiredBeforeUse) ...[
         const SizedBox(height: 16),
-        const Text('Beatrazeem is for people aged 9 and older.'),
-        CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('I am 9 years old or older.'),
-          value: minimumAge,
-          onChanged: working
-              ? null
-              : (v) => setState(() => minimumAge = v ?? false),
+        const Text(
+          'By continuing, I agree to the terms and conditions and privacy notice.',
+          key: ValueKey('terms-statement'),
         ),
-        CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'I agree to the personal-data uses described in this notice.',
-          ),
-          value: agreed,
-          onChanged: working
-              ? null
-              : (v) => setState(() => agreed = v ?? false),
-        ),
+        const SizedBox(height: 12),
         FilledButton(
-          onPressed: working || !agreed || !minimumAge ? null : accept,
-          child: Text(working ? 'Checking…' : 'Accept and continue'),
+          onPressed: working ? null : accept,
+          child: Text(working ? 'Saving…' : 'Continue'),
         ),
         TextButton(
           onPressed: working ? null : () => SystemNavigator.pop(),

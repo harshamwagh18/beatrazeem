@@ -1,10 +1,11 @@
 import 'package:flutter/services.dart';
 
-/// Local notice receipt. The age declaration is not age or identity verification.
+/// Local record of the notice accepted by pressing Continue.
 class PrivacyConsent {
   const PrivacyConsent({
     required this.noticeVersion,
     required this.acceptedAt,
+    this.noticeAccepted = false,
     this.minimumAgeConfirmed = false,
     this.adultConfirmed = false,
     this.guardianApproval,
@@ -12,6 +13,7 @@ class PrivacyConsent {
 
   final String noticeVersion;
   final DateTime acceptedAt;
+  final bool noticeAccepted;
   final bool minimumAgeConfirmed;
 
   /// Retained only to read older receipts without turning them into a new choice.
@@ -19,7 +21,8 @@ class PrivacyConsent {
   final String? guardianApproval;
 
   bool accepts(String currentNoticeVersion) =>
-      minimumAgeConfirmed &&
+      noticeAccepted &&
+      !minimumAgeConfirmed &&
       !adultConfirmed &&
       guardianApproval == null &&
       noticeVersion == currentNoticeVersion;
@@ -27,11 +30,18 @@ class PrivacyConsent {
   factory PrivacyConsent.fromMap(Map<dynamic, dynamic> values) {
     final version = values['noticeVersion'];
     final time = values['acceptedAtEpochMs'];
+    final accepted = values['noticeAccepted'];
     final minimumAge = values['minimumAgeConfirmed'];
     final adult = values['adultConfirmed'];
     final approval = values['guardianApproval'];
-    final currentSchema = values.containsKey('minimumAgeConfirmed');
+    final currentSchema = values.containsKey('noticeAccepted');
+    final ageSchema = values.containsKey('minimumAgeConfirmed');
     final validChoice = currentSchema
+        ? accepted == true &&
+              (minimumAge == null || minimumAge == false) &&
+              (adult == null || adult == false) &&
+              approval == null
+        : ageSchema
         ? minimumAge == true &&
               (adult == null || adult == false) &&
               approval == null
@@ -52,7 +62,8 @@ class PrivacyConsent {
     return PrivacyConsent(
       noticeVersion: version,
       acceptedAt: DateTime.fromMillisecondsSinceEpoch(time, isUtc: true),
-      minimumAgeConfirmed: currentSchema,
+      noticeAccepted: currentSchema,
+      minimumAgeConfirmed: minimumAge == true,
       adultConfirmed: adult == true,
       guardianApproval: approval as String?,
     );
@@ -77,14 +88,14 @@ class PrivacyStore {
 
   Future<void> saveConsent({
     required String noticeVersion,
-    required bool minimumAgeConfirmed,
+    required bool noticeAccepted,
   }) async {
-    if (!_validVersion(noticeVersion) || !minimumAgeConfirmed) {
-      throw const FormatException('Confirm that you are 9 or older.');
+    if (!_validVersion(noticeVersion) || !noticeAccepted) {
+      throw const FormatException('Continue to accept the current notice.');
     }
     await _channel.invokeMethod<void>('saveConsent', {
       'noticeVersion': noticeVersion,
-      'minimumAgeConfirmed': minimumAgeConfirmed,
+      'noticeAccepted': noticeAccepted,
     });
   }
 

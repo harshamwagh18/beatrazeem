@@ -82,11 +82,15 @@ class MainActivity : FlutterActivity() {
                                         val version = preferences.getString("privacyNoticeVersion", null)
                                         if (version == null) null else {
                                             val acceptedAt = preferences.getLong("privacyAcceptedAt", 0L)
-                                            val currentSchema = preferences.contains("privacyMinimumAgeConfirmed")
+                                            val currentSchema = preferences.contains("privacyNoticeAccepted")
+                                            val ageSchema = preferences.contains("privacyMinimumAgeConfirmed")
+                                            val noticeAccepted = preferences.getBoolean("privacyNoticeAccepted", false)
                                             val minimumAge = preferences.getBoolean("privacyMinimumAgeConfirmed", false)
                                             val adult = preferences.getBoolean("privacyAdultConfirmed", false)
                                             val guardian = preferences.getString("privacyGuardianApproval", null)
                                             val validChoice = if (currentSchema) {
+                                                noticeAccepted && !minimumAge && !adult && guardian == null
+                                            } else if (ageSchema) {
                                                 minimumAge && !adult && guardian == null
                                             } else {
                                                 if (adult) guardian == null else !guardian.isNullOrBlank() && guardian.length <= 8192
@@ -95,8 +99,11 @@ class MainActivity : FlutterActivity() {
                                                 acceptedAt in 1L..8640000000000000L && validChoice) {
                                                 "The saved privacy choice is invalid."
                                             }
-                                            // Reading a legacy receipt never upgrades it into a new age declaration.
+                                            // An earlier receipt never silently accepts a changed notice.
                                             if (currentSchema) {
+                                                mapOf("noticeVersion" to version, "acceptedAtEpochMs" to acceptedAt,
+                                                    "noticeAccepted" to noticeAccepted)
+                                            } else if (ageSchema) {
                                                 mapOf("noticeVersion" to version, "acceptedAtEpochMs" to acceptedAt,
                                                     "minimumAgeConfirmed" to minimumAge)
                                             } else {
@@ -109,17 +116,18 @@ class MainActivity : FlutterActivity() {
                                 }
                                 "saveConsent" -> {
                                     val version = call.argument<String>("noticeVersion") ?: error("A privacy notice version is required.")
-                                    val minimumAge = call.argument<Boolean>("minimumAgeConfirmed") == true
-                                    require(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) && minimumAge) {
-                                        "Confirm that you are 9 or older."
+                                    val noticeAccepted = call.argument<Boolean>("noticeAccepted") == true
+                                    require(version.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,79}")) && noticeAccepted) {
+                                        "Continue to accept the current notice."
                                     }
-                                    // Store the new self-declaration without representing the user as an adult.
-                                    // Replacing consent also removes all obsolete guardian data in one write.
+                                    // Record the Continue action without recording an age declaration.
+                                    // Remove obsolete age and guardian data in the same checked write.
                                     check(PrivacyWriteGuard.commit {
                                         preferences.edit()
                                         .putString("privacyNoticeVersion", version)
                                         .putLong("privacyAcceptedAt", System.currentTimeMillis())
-                                        .putBoolean("privacyMinimumAgeConfirmed", minimumAge)
+                                        .putBoolean("privacyNoticeAccepted", noticeAccepted)
+                                        .remove("privacyMinimumAgeConfirmed")
                                         .remove("privacyAdultConfirmed")
                                         .remove("privacyGuardianApproval")
                                         .remove("privacyApprovalRequestId")

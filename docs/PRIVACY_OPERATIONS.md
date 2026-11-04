@@ -1,6 +1,6 @@
 # Beatrazeem privacy operations and release requirements
 
-Updated 3 November 2026 for version 0.9.1 (build 17). This document describes the current interface and the operator work that remains. It does not certify legal compliance. A displayed contact, a self-declared age or passing software tests do not establish effective request handling or verified parental consent.
+Updated 3 November 2026 for version 0.9.2 (build 18). This document describes the current interface and the operator work that remains. It does not certify legal compliance. A displayed contact, a self-declared age or passing software tests do not establish effective request handling or verified parental consent.
 
 ## Current release and responsibility
 
@@ -8,7 +8,8 @@ The responsible operator is **gamelauncher**. The user supplied **gamelauncer223
 
 The privacy screen displays “If you have any queries, contact gamelauncer223@gmail.com.” It no longer has a request-category selector, email-draft button, copy-request button or guardian approval controls. Users send correspondence through their own email app. The local data summary, notice, profile correction and withdrawal/deletion remain available.
 
-Onboarding now requires affirmative confirmation that the user is **9 or older**, plus agreement to notice **2026-11-03.1**. This is a self-declaration. It does not verify age, establish adulthood or provide verified parental consent for users aged 9–17. The release no longer offers the previous operator-signed guardian approval route. Do not describe the new age checkbox as a substitute for verified parental or lawful-guardian consent, or claim that this version obeys all laws.
+Onboarding shows a plain terms-and-conditions statement and a Continue button. There are no checkboxes or age-declaration prompts. Pressing Continue records acceptance of notice **2026-11-04.1** after a successful local save; simply viewing the page does not. No age or adult confirmation is recorded. The existing intended age of 9+ remains described in the notice, but the app does not enforce or verify age and does not provide verified parental consent.
+
 
 Determine the roles of the app operator, creator and listeners, including any applicable personal/domestic exception, lawful basis and child/guardian requirements for the intended deployment. Record the decision, purposes, data categories, recipients, retention and responsible owner. Reassess when adding analytics, accounts, cloud relays, advertising, payments, support tooling or remote crash collection.
 
@@ -17,8 +18,8 @@ Determine the roles of the app operator, creator and listeners, including any ap
 | Data | Purpose and expected location | Operator action |
 |---|---|---|
 | Display username | Identify a person in a nearby room; saved in private app storage and shared with admitted members | Keep correction/deletion available; names are display labels, not verified identities |
-| Current consent receipt | Notice version, acceptance timestamp and minimum-age self-declaration; private phone storage | Preserve exact notice versions; do not interpret minimum-age confirmation as verified adulthood or parental consent |
-| Legacy privacy records | An older receipt or guardian approval/request reference may exist on an updated installation until replaced or deleted | The old receipt cannot bypass the current notice; accepting the new notice removes obsolete guardian data, while withdrawal deletes local profile and privacy records |
+| Current consent receipt | Notice version, acceptance timestamp and Continue acknowledgement; private phone storage | Preserve exact notice versions; do not interpret notice acceptance as verified age, adulthood or parental consent |
+| Legacy privacy records | An older receipt or guardian approval/request reference may exist on an updated installation until replaced or deleted | The old receipt cannot bypass the current notice; accepting the new notice removes obsolete age and guardian data, while withdrawal deletes local profile and privacy records |
 | Room name and member list | Show the current listening group | Clear session data when the room ends; no historical member list is kept |
 | Microphone and captured app audio | Live transmission and playback through temporary buffers | Explain capture and provide stop controls; do not introduce recordings silently |
 | Local network addresses and timing messages | Discover, authenticate and synchronize nearby devices | Distinguish visible metadata from encrypted room content |
@@ -28,9 +29,9 @@ Check the actual build, dependencies, Android backup behavior and support system
 
 ## Notice, migration and withdrawal
 
-Give the current notice before saving a new profile or starting room discovery/capture. Existing users must explicitly accept the changed notice; the earlier receipt is not automatically reinterpreted. A saved username is retained during the upgrade. The age checkbox and notice agreement start unchecked. Android microphone and projection permissions remain separate.
+Give the current notice before saving a new profile or starting room discovery/capture. Existing users must explicitly accept the changed notice; the earlier receipt is not automatically reinterpreted. A saved username is retained during the upgrade. The agreement is plain text; no consent is saved until Continue is pressed. Android microphone and projection permissions remain separate.
 
-Keep the exact notice text with its version so local receipts can be interpreted. The current notice is [2026-11-03.1](PRIVACY_NOTICE.md); [2026-11-02.1](privacy-notices/2026-11-02.1.md) is historical and must not be used as current onboarding instructions.
+Keep the exact notice text with its version so local receipts can be interpreted. The current notice is [2026-11-04.1](PRIVACY_NOTICE.md); [2026-11-02.1](privacy-notices/2026-11-02.1.md) is historical and must not be used as current onboarding instructions.
 
 Users can review their local data, stop sharing, leave, correct their name in Profile, or withdraw and delete. Withdrawal stops capture/output and leaves the room before erasing the local profile and privacy records. Failed persistence or deletion must not be described as success. Keep room use blocked while deletion is retried. Clearing this phone cannot erase another person's recordings or correspondence already sent to the operator.
 
@@ -48,7 +49,7 @@ Removing the request form does not remove the need to operate the published cont
 
 ## Children and lawful guardians: changed capability
 
-Version 0.9.1 permits entry following a self-declaration of age 9 or older and acceptance of the notice. It has no guardian-verification request or token-entry flow. No age or identity verification service is connected. This is a material change from 0.9.0, not evidence that child/guardian obligations have been fulfilled.
+Version 0.9.2 permits entry after Continue records acceptance of the notice. It does not request an age declaration. It has no guardian-verification request or token-entry flow. No age or identity verification service is connected. This is a material change from 0.9.0, not evidence that child/guardian obligations have been fulfilled.
 
 Resolve the applicable requirements and provide an effective consent/withdrawal process before claiming verified parental consent or full compliance for child use. Consider users who require a lawful guardian as well as children. Consent from someone operating a microphone does not independently establish consent from every identifiable person whose voice is transmitted.
 
@@ -78,7 +79,7 @@ The [October 2026 Removal of Difficulties Order](https://www.meity.gov.in/static
 
 - Confirmed operator identity and a reachable, staffed current contact address.
 - Accurate notice and data inventory for this exact build.
-- Documented decision and effective process for child and lawful-guardian requirements; the 9+ checkbox is not verified parental consent.
+- Documented decision and effective process for child and lawful-guardian requirements; notice acceptance is not verified parental consent.
 - Requests, nomination and grievance handling tested from actual email receipt to response.
 - Retention/erasure decisions for local processing, correspondence and any historical verification records.
 - Effective affected-user and regulator incident-notification procedure.

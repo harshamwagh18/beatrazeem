@@ -1,10 +1,10 @@
-# Beatrazeem — Android app, v0.9.1 test release
+# Beatrazeem — Android app, v0.9.2 test release
 
 Beatrazeem creates nearby listening rooms with a **6-digit code**. There is no website, account, upload form, or cloud audio storage in this app.
 
 ## Use it
 
-1. Install Beatrazeem 0.9.1 on every device. Confirm that you are 9 or older and accept the current privacy notice. The app records this self-declaration without collecting a birth date; it does not verify age or parental consent. Turn on the creator phone’s hotspot in Android settings and connect every listener to that hotspot. Enter a username once. It is saved on that phone; later launches open the home screen directly.
+1. Install Beatrazeem 0.9.2 on every device. Read the terms and privacy notice, then tap Continue. The agreement is plain text with no age prompt or checkbox. Turn on the creator phone’s hotspot in Android settings and connect every listener to that hotspot. Enter a username once. It is saved on that phone; later launches open the home screen directly.
 2. On the creator, select **Host**, enter a room name, and tap **Create a room**. Share the six digits shown on screen.
 3. On listeners, select **Join**, enter those digits, and tap **Join room**. Compare the separate security code on the creator and listener phones, then approve on both. The room name and live member list appear on every updated phone.
 4. The creator selects **Microphone**, **App audio**, or **Karaoke**, then starts sharing.
@@ -13,17 +13,17 @@ Beatrazeem creates nearby listening rooms with a **6-digit code**. There is no w
 
 There can be one creator and up to eight listeners. Rooms end when the creator leaves or the app process stops. Guest Wi-Fi, AP isolation, VPNs, and some hotspots may block nearby discovery.
 
-## Simpler privacy screen — 0.9.1
+## Simpler privacy screen — 0.9.2
 
 - **Privacy & your data**, available from the shield icon, keeps the full notice, local data summary and withdrawal with local deletion.
 - The guardian-approval controls and privacy-request/complaint form have been removed. A selectable line says **“If you have any queries, contact gamelauncer223@gmail.com.”** The responsible operator remains **gamelauncher**. Users send any email themselves; the app does not submit a request.
-- Onboarding requires two unchecked confirmations: age 9 or older, and agreement to the current notice. Age eligibility is recorded as a minimum-age self-declaration, never as an adult or verified-guardian decision. This version has no verified parental-consent route for children aged 9–17.
-- Notice **2026-11-03.1** replaces the previous notice. Existing users must accept it again before entering rooms; their saved username stays available. Accepting the new notice removes obsolete guardian approval/request data. Old adult or guardian receipts do not automatically grant access under the changed notice.
+- Onboarding shows “By continuing, I agree to the terms and conditions and privacy notice.” followed by Continue. There are no checkboxes or age-confirmation prompts. A successful Continue records acceptance of this notice, without making an age or adult claim.
+- Notice **2026-11-04.1** replaces the previous notice. Existing users must accept it again before entering rooms; their saved username stays available. Accepting the new notice removes obsolete age confirmation and guardian approval/request data. Old age, adult or guardian receipts do not automatically grant access under the changed notice.
 - Withdrawing stops input/output, closes the room and erases the local profile and privacy records. A failed erase is reported with retry/Android clear-storage instructions. Configured cloud/device backups exclude app data.
 - Android capture now explicitly checks revoked audio permission and handles optional sharing-notification permission. Newer navigation-bar styling is limited to supported Android versions. Failed consent writes remain blocked even after reopening the Activity.
 - Room encryption and connection verification remain in place. Compare matching security codes on both phones before approving a connection. The six-digit room code remains the joining method; protocol v3 has no plaintext fallback.
 
-**This development build is not a legal-compliance certificate or production approval.** The age checkbox does not establish verified parental consent. The operator still needs to resolve the child-use requirements, handle requests sent to the contact address, determine applicable retention, and establish effective breach-notification delivery. Physical-device and independent security reviews remain necessary. See [change locations](docs/PRIVACY_CHANGELOG.md), [operator procedures](docs/PRIVACY_OPERATIONS.md), [current notice](docs/PRIVACY_NOTICE.md), [previous notice](docs/privacy-notices/2026-11-02.1.md), and [validation](docs/VALIDATION.md).
+**This development build is not a legal-compliance certificate or production approval.** This flow does not verify age or parental consent. The operator still needs to resolve the child-use requirements, handle requests sent to the contact address, determine applicable retention, and establish effective breach-notification delivery. Physical-device and independent security reviews remain necessary. See [change locations](docs/PRIVACY_CHANGELOG.md), [operator procedures](docs/PRIVACY_OPERATIONS.md), [current notice](docs/PRIVACY_NOTICE.md), [previous notice](docs/privacy-notices/2026-11-03.1.md), and [validation](docs/VALIDATION.md).
 
 The distributed APK uses Flutter release mode for phone testing, with the existing development signing certificate so it can update the previous build. It is not a production signing setup.
 
@@ -35,7 +35,7 @@ The distributed APK uses Flutter release mode for phone testing, with the existi
 - Bursts of captured audio now wait in a bounded per-listener queue for delivery credit. Previously, a ninth unacknowledged packet was discarded even when its playback time was still in the future. Expired audio is discarded so a stalled connection cannot accumulate an ever-growing delay.
 - Output interruptions and route changes reanchor playback automatically, including short interruptions that previously took seconds to catch up.
 - The shared target buffer remains **200 ms**, using **20 ms packets**. This update fixes continuity and timing behavior without reducing the buffer further.
-- Install **0.9.1 on every phone** and recreate the room. Saved profiles remain intact during a normal update.
+- Install **0.9.2 on every phone** and recreate the room. Saved profiles remain intact during a normal update.
 
 Live delay is estimated from capture and speaker timestamps, not an acoustic measurement. Unavailable or stale timing shows **Measuring…**; Bluetooth may add unreported delay. The delay preview uses an illustrative value, not a measured phone result.
 
@@ -107,7 +107,7 @@ The room identity features from 0.2.0 are retained:
 - A required room name for creators, displayed to everyone in the room.
 - A live **In this room** member list with initials, creator labels, and a **(you)** indicator. Joining, leaving, and manually rejoining update the list.
 
-Usernames are limited to 24 characters and room names to 36. Usernames are saved display names, not verified accounts, and are shared with the connected room. Room names last for the room session. Duplicate names are allowed; each connection has its own identity. Update all phones to 0.9.1 for creator-hotspot discovery, bounded audio queues, saved profiles, and live name changes. Older versions must update before joining encrypted rooms.
+Usernames are limited to 24 characters and room names to 36. Usernames are saved display names, not verified accounts, and are shared with the connected room. Room names last for the room session. Duplicate names are allowed; each connection has its own identity. Update all phones to 0.9.2 for creator-hotspot discovery, bounded audio queues, saved profiles, and live name changes. Older versions must update before joining encrypted rooms.
 
 Room codes, host microphone routing, and the Android output scheduling and room-clock improvements from 0.5.0 are retained. Automatic reconnection is not included; use Join again after a connection is lost.
 

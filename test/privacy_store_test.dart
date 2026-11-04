@@ -8,11 +8,11 @@ void main() {
   const channel = MethodChannel('beatrazeem/privacy');
   const profileChannel = MethodChannel('beatrazeem/profile');
   const store = PrivacyStore();
-  const current = '2026-11-03.1';
+  const current = '2026-11-04.1';
   final valid = <String, Object>{
     'noticeVersion': current,
     'acceptedAtEpochMs': 1793664000000,
-    'minimumAgeConfirmed': true,
+    'noticeAccepted': true,
   };
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -30,9 +30,9 @@ void main() {
     messenger.setMockMethodCallHandler(channel, (_) async => valid);
     final consent = (await store.readConsent())!;
     expect(consent.accepts(current), isTrue);
-    expect(consent.accepts('2026-11-04.1'), isFalse);
+    expect(consent.accepts('2026-11-05.1'), isFalse);
     expect(consent.acceptedAt.isUtc, isTrue);
-    expect(consent.minimumAgeConfirmed, isTrue);
+    expect(consent.noticeAccepted, isTrue);
     expect(consent.adultConfirmed, isFalse);
     expect(consent.guardianApproval, isNull);
   });
@@ -43,9 +43,9 @@ void main() {
       {...valid, 'acceptedAtEpochMs': -1},
       {...valid, 'acceptedAtEpochMs': 8640000000000001},
       {...valid, 'acceptedAtEpochMs': 'yesterday'},
-      {...valid, 'minimumAgeConfirmed': false},
-      {...valid, 'minimumAgeConfirmed': 'true'},
-      {...valid, 'minimumAgeConfirmed': null},
+      {...valid, 'noticeAccepted': false},
+      {...valid, 'noticeAccepted': 'true'},
+      {...valid, 'noticeAccepted': null},
       {'noticeVersion': current},
     ]) {
       messenger.setMockMethodCallHandler(channel, (_) async => receipt);
@@ -53,8 +53,10 @@ void main() {
     }
   });
 
-  test('new age receipt cannot mix adult or guardian claims', () async {
+  test('new notice receipt cannot mix age or guardian claims', () async {
     for (final receipt in [
+      {...valid, 'minimumAgeConfirmed': true},
+      {...valid, 'minimumAgeConfirmed': 'false'},
       {...valid, 'adultConfirmed': true},
       {...valid, 'adultConfirmed': 'false'},
       {...valid, 'guardianApproval': 'legacy-token'},
@@ -76,7 +78,7 @@ void main() {
     );
     final receipt = (await store.readConsent())!;
     expect(receipt.adultConfirmed, isTrue);
-    expect(receipt.minimumAgeConfirmed, isFalse);
+    expect(receipt.noticeAccepted, isFalse);
     // Even a matching notice string cannot turn old-schema storage into consent.
     expect(receipt.accepts(current), isFalse);
   });
@@ -95,7 +97,25 @@ void main() {
       );
       final receipt = (await store.readConsent())!;
       expect(receipt.guardianApproval, 'old-signed-token');
-      expect(receipt.minimumAgeConfirmed, isFalse);
+      expect(receipt.noticeAccepted, isFalse);
+      expect(receipt.accepts(current), isFalse);
+    },
+  );
+
+  test(
+    'legacy age declaration remains readable without accepting new terms',
+    () async {
+      messenger.setMockMethodCallHandler(
+        channel,
+        (_) async => {
+          'noticeVersion': '2026-11-03.1',
+          'acceptedAtEpochMs': 1793664000000,
+          'minimumAgeConfirmed': true,
+        },
+      );
+      final receipt = (await store.readConsent())!;
+      expect(receipt.minimumAgeConfirmed, isTrue);
+      expect(receipt.noticeAccepted, isFalse);
       expect(receipt.accepts(current), isFalse);
     },
   );
@@ -117,7 +137,7 @@ void main() {
   });
 
   test(
-    'only affirmative minimum age reaches storage, without adult or birth date',
+    'only the Continue acknowledgement reaches storage without age or adult claims',
     () async {
       final calls = <MethodCall>[];
       messenger.setMockMethodCallHandler(channel, (call) async {
@@ -125,22 +145,19 @@ void main() {
         return null;
       });
       await expectLater(
-        store.saveConsent(noticeVersion: current, minimumAgeConfirmed: false),
+        store.saveConsent(noticeVersion: current, noticeAccepted: false),
         throwsFormatException,
       );
       await expectLater(
-        store.saveConsent(noticeVersion: '', minimumAgeConfirmed: true),
+        store.saveConsent(noticeVersion: '', noticeAccepted: true),
         throwsFormatException,
       );
       expect(calls, isEmpty);
-      await store.saveConsent(
-        noticeVersion: current,
-        minimumAgeConfirmed: true,
-      );
+      await store.saveConsent(noticeVersion: current, noticeAccepted: true);
       expect(calls.single.method, 'saveConsent');
       expect(calls.single.arguments, {
         'noticeVersion': current,
-        'minimumAgeConfirmed': true,
+        'noticeAccepted': true,
       });
     },
   );
@@ -151,7 +168,7 @@ void main() {
     });
     await expectLater(store.readConsent(), throwsA(isA<PlatformException>()));
     await expectLater(
-      store.saveConsent(noticeVersion: current, minimumAgeConfirmed: true),
+      store.saveConsent(noticeVersion: current, noticeAccepted: true),
       throwsA(isA<PlatformException>()),
     );
     await expectLater(store.deleteAll(), throwsA(isA<PlatformException>()));
@@ -173,7 +190,7 @@ void main() {
       PrivacyConsent(
         noticeVersion: current,
         acceptedAt: DateTime.utc(2026),
-        minimumAgeConfirmed: true,
+        noticeAccepted: true,
         adultConfirmed: true,
       ),
     ]) {

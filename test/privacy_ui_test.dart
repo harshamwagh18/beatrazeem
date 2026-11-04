@@ -10,12 +10,12 @@ import 'host_microphone_test.dart'
 
 class _PrivacyTestStore extends PrivacyStore {
   _PrivacyTestStore({this.profile, bool accepted = false}) {
-    if (accepted) receipt = ageReceipt;
+    if (accepted) receipt = acceptedReceipt;
   }
-  static PrivacyConsent get ageReceipt => PrivacyConsent(
+  static PrivacyConsent get acceptedReceipt => PrivacyConsent(
     noticeVersion: PrivacyPolicy.noticeVersion,
     acceptedAt: DateTime.utc(2026, 11, 2),
-    minimumAgeConfirmed: true,
+    noticeAccepted: true,
   );
   final TestProfileStore? profile;
   PrivacyConsent? receipt;
@@ -26,14 +26,14 @@ class _PrivacyTestStore extends PrivacyStore {
   @override
   Future<void> saveConsent({
     required String noticeVersion,
-    required bool minimumAgeConfirmed,
+    required bool noticeAccepted,
   }) async {
     if (failSave) throw StateError('Privacy save failed');
     saves++;
     receipt = PrivacyConsent(
       noticeVersion: noticeVersion,
       acceptedAt: DateTime.now().toUtc(),
-      minimumAgeConfirmed: minimumAgeConfirmed,
+      noticeAccepted: noticeAccepted,
     );
   }
 
@@ -48,9 +48,8 @@ class _PrivacyTestStore extends PrivacyStore {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const ageChoice = 'I am 9 years old or older.';
   const agreement =
-      'I agree to the personal-data uses described in this notice.';
+      'By continuing, I agree to the terms and conditions and privacy notice.';
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   String? clipboard;
@@ -114,7 +113,7 @@ void main() {
   }
 
   testWidgets(
-    'age 9+ and notice agreement start unchecked and are both required',
+    'plain agreement waits for Continue and saves no age declaration',
     (tester) async {
       final store = _PrivacyTestStore();
       var accepted = false;
@@ -128,20 +127,16 @@ void main() {
         ),
       );
       FilledButton button() => tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Accept and continue'),
+        find.widgetWithText(FilledButton, 'Continue'),
       );
-      expect(button().onPressed, isNull);
-      expect(
-        tester
-            .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
-            .every((item) => item.value == false),
-        isTrue,
-      );
-      await tap(tester, ageChoice);
-      expect(button().onPressed, isNull);
-      await tap(tester, agreement);
+      expect(find.byType(Checkbox), findsNothing);
+      expect(find.byType(CheckboxListTile), findsNothing);
+      expect(find.text('I am 9 years old or older.'), findsNothing);
+      expect(find.text(agreement), findsOneWidget);
+      expect(store.saves, 0);
+      expect(accepted, isFalse);
       expect(button().onPressed, isNotNull);
-      await tap(tester, 'Accept and continue');
+      await tap(tester, 'Continue');
       expect(store.saves, 1);
       expect(accepted, isTrue);
       expect(store.receipt!.noticeVersion, PrivacyPolicy.noticeVersion);
@@ -167,28 +162,27 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Accept and continue'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
     expect(find.text('Create a room'), findsNothing);
     expect(room.connected, isFalse);
-    await tap(tester, ageChoice);
-    await tap(tester, agreement);
-    await tap(tester, 'Accept and continue');
+    await tap(tester, 'Continue');
     expect(find.text('Hey, Existing name.'), findsOneWidget);
     expect(store.saves, 1);
     await close(tester);
   });
 
-  for (final legacyAdult in [true, false]) {
+  for (final legacy in ['adult', 'guardian', 'age']) {
     testWidgets(
-      'earlier ${legacyAdult ? 'adult' : 'guardian'} receipt requires new age confirmation',
+      'earlier $legacy receipt requires Continue for the updated notice',
       (tester) async {
         final profile = TestProfileStore()..name = 'Existing name';
         final store = _PrivacyTestStore(profile: profile)
           ..receipt = PrivacyConsent(
-            noticeVersion: '2026-11-02.1',
+            noticeVersion: legacy == 'age' ? '2026-11-03.1' : '2026-11-02.1',
             acceptedAt: DateTime.utc(2026, 11, 2),
-            adultConfirmed: legacyAdult,
-            guardianApproval: legacyAdult ? null : 'old-signed-token',
+            adultConfirmed: legacy == 'adult',
+            minimumAgeConfirmed: legacy == 'age',
+            guardianApproval: legacy == 'guardian' ? 'old-signed-token' : null,
           );
         final room = TestRoom();
         await setup(
@@ -203,24 +197,15 @@ void main() {
             ),
           ),
         );
-        expect(find.text('Accept and continue'), findsOneWidget);
+        expect(find.text('Continue'), findsOneWidget);
         expect(find.text('Create a room'), findsNothing);
         expect(room.connected, isFalse);
         expect(store.saves, 0);
-        await tap(tester, agreement);
-        expect(
-          tester
-              .widget<FilledButton>(
-                find.widgetWithText(FilledButton, 'Accept and continue'),
-              )
-              .onPressed,
-          isNull,
-        );
-        await tap(tester, ageChoice);
-        await tap(tester, 'Accept and continue');
+        await tap(tester, 'Continue');
         expect(find.text('Hey, Existing name.'), findsOneWidget);
         expect(profile.name, 'Existing name');
-        expect(store.receipt!.minimumAgeConfirmed, isTrue);
+        expect(store.receipt!.noticeAccepted, isTrue);
+        expect(store.receipt!.minimumAgeConfirmed, isFalse);
         expect(store.receipt!.adultConfirmed, isFalse);
         expect(store.receipt!.guardianApproval, isNull);
         await close(tester);
@@ -228,28 +213,29 @@ void main() {
     );
   }
 
-  testWidgets('current 9+ receipt opens saved profile without asking again', (
-    tester,
-  ) async {
-    final profile = TestProfileStore()..name = 'Razeem';
-    final store = _PrivacyTestStore(profile: profile, accepted: true);
-    await setup(
-      tester,
-      BeatrazeemApp(
-        studio: Studio(
-          profileStore: profile,
-          privacyStore: store,
-          room: TestRoom(),
-          audio: TestAudio(),
-          discovery: TestDiscovery(),
+  testWidgets(
+    'current notice receipt opens saved profile without asking again',
+    (tester) async {
+      final profile = TestProfileStore()..name = 'Razeem';
+      final store = _PrivacyTestStore(profile: profile, accepted: true);
+      await setup(
+        tester,
+        BeatrazeemApp(
+          studio: Studio(
+            profileStore: profile,
+            privacyStore: store,
+            room: TestRoom(),
+            audio: TestAudio(),
+            discovery: TestDiscovery(),
+          ),
         ),
-      ),
-    );
-    expect(find.text('Hey, Razeem.'), findsOneWidget);
-    expect(find.text('Accept and continue'), findsNothing);
-    expect(store.saves, 0);
-    await close(tester);
-  });
+      );
+      expect(find.text('Hey, Razeem.'), findsOneWidget);
+      expect(find.text('Continue'), findsNothing);
+      expect(store.saves, 0);
+      await close(tester);
+    },
+  );
 
   testWidgets('a failed consent save never grants entry', (tester) async {
     final store = _PrivacyTestStore()..failSave = true;
@@ -263,9 +249,7 @@ void main() {
         },
       ),
     );
-    await tap(tester, ageChoice);
-    await tap(tester, agreement);
-    await tap(tester, 'Accept and continue');
+    await tap(tester, 'Continue');
     expect(find.textContaining('Privacy save failed'), findsOneWidget);
     expect(accepted, isFalse);
     expect(store.receipt, isNull);
@@ -310,13 +294,13 @@ void main() {
           expect(profile.name, 'Razeem');
           await tester.pageBack();
           await tester.pumpAndSettle();
-          expect(find.text('Accept and continue'), findsOneWidget);
+          expect(find.text('Continue'), findsOneWidget);
           expect(find.text('Create a room'), findsNothing);
         } else {
           expect(store.deletes, 1);
           expect(store.receipt, isNull);
           expect(profile.name, isNull);
-          expect(find.text('Accept and continue'), findsOneWidget);
+          expect(find.text('Continue'), findsOneWidget);
         }
         await close(tester);
       },
