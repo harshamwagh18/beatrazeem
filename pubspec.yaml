@@ -1,7 +1,7 @@
 name: beatrazeem
 description: Native live audio rooms with six-digit room codes.
 publish_to: none
-version: 0.9.3+19
+version: 0.9.4+20
 environment:
   sdk: '>=3.11.0 <4.0.0'
 dependencies:

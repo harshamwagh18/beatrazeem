@@ -85,7 +85,9 @@ class RoomDiscovery {
       final endpoint = await result.future.timeout(
         searchTimeout,
         onTimeout: () => throw Exception(
-          'Room not found. Turn on the creator’s hotspot, connect every listener to it, and check the six-digit code. Keep the creator’s room open.',
+          direct.retryAfterSeconds > 0
+              ? 'Room lookup is temporarily limited. Wait ${direct.retryAfterSeconds} seconds, check the code and try again.'
+              : 'Room not found. Turn on the creator’s hotspot, connect every listener to it, and check the six-digit code. Keep the creator’s room open.',
         ),
       );
       found = true;

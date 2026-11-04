@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'protocol.dart';
+import 'discovery_limiter.dart';
 
 /// Unicast discovery works on the creator's hotspot without mDNS multicast.
 class DirectRoomDiscovery {
@@ -10,6 +11,21 @@ class DirectRoomDiscovery {
   HttpServer? _server;
   final Set<HttpClient> _clients = {};
   int _search = 0;
+  DiscoveryLimiter? _limiter;
+  int get failedDiscoveryAttempts => _limiter?.failedAttempts ?? 0;
+  int get throttledDiscoveryRequests => _limiter?.throttledRequests ?? 0;
+  final _retryClock = Stopwatch()..start();
+  final Map<String, int> _retryAfter = {};
+  int get retryAfterSeconds {
+    var remaining = 0;
+    for (final deadline in _retryAfter.values) {
+      final seconds = ((deadline - _retryClock.elapsedMilliseconds) / 1000)
+          .ceil();
+      if (seconds > remaining) remaining = seconds;
+    }
+    return remaining.clamp(0, 30);
+  }
+
   int get port => _server?.port ?? discoveryPort;
 
   Future<void> advertise(String code, int roomPort) async {
@@ -22,22 +38,41 @@ class DirectRoomDiscovery {
       discoveryPort,
     );
     _server = server;
+    final limiter = DiscoveryLimiter();
+    _limiter = limiter;
     server.idleTimeout = const Duration(seconds: 3);
     server.listen((request) async {
       try {
-        if (request.method != 'GET' ||
-            request.uri.path != '/beatrazeem/room' ||
-            request.headers.value('x-beatrazeem-code') != code) {
-          request.response.statusCode = HttpStatus.notFound;
+        final source = request.connectionInfo?.remoteAddress.address;
+        final retry = source == null ? 30 : limiter.admit(source);
+        request.response.persistentConnection = false;
+        request.response.headers.set(
+          HttpHeaders.cacheControlHeader,
+          'no-store',
+        );
+        if (retry > 0) {
+          request.response.statusCode = HttpStatus.tooManyRequests;
+          request.response.headers.set(HttpHeaders.retryAfterHeader, '$retry');
         } else {
-          request.response.headers.contentType = ContentType.json;
-          request.response.write(
-            jsonEncode({
-              'service': 'beatrazeem',
-              'code': code,
-              'port': roomPort,
-            }),
-          );
+          final codes = request.headers['x-beatrazeem-code'];
+          final matched =
+              request.method == 'GET' &&
+              request.uri.path == '/beatrazeem/room' &&
+              codes?.length == 1 &&
+              codes!.single == code;
+          limiter.recordResult(source!, matched: matched);
+          if (!matched) {
+            request.response.statusCode = HttpStatus.notFound;
+          } else {
+            request.response.headers.contentType = ContentType.json;
+            request.response.write(
+              jsonEncode({
+                'service': 'beatrazeem',
+                'code': code,
+                'port': roomPort,
+              }),
+            );
+          }
         }
         await request.response.close();
       } catch (_) {
@@ -55,6 +90,7 @@ class DirectRoomDiscovery {
       throw const FormatException('Enter exactly 6 digits.');
     }
     final search = ++_search;
+    _retryAfter.clear();
     final addresses = gateways
         .where(
           (value) =>
@@ -87,6 +123,9 @@ class DirectRoomDiscovery {
   }
 
   Future<int?> _probe(String address, String code) async {
+    if (_retryClock.elapsedMilliseconds < (_retryAfter[address] ?? 0)) {
+      return null;
+    }
     final client = HttpClient()
       ..connectionTimeout = const Duration(milliseconds: 900);
     client.findProxy = (_) => 'DIRECT';
@@ -104,6 +143,16 @@ class DirectRoomDiscovery {
         request.followRedirects = false;
         request.headers.set('x-beatrazeem-code', code);
         final response = await request.close();
+        if (response.statusCode == HttpStatus.tooManyRequests) {
+          final seconds =
+              int.tryParse(
+                response.headers.value(HttpHeaders.retryAfterHeader) ?? '',
+              ) ??
+              5;
+          _retryAfter[address] =
+              _retryClock.elapsedMilliseconds + seconds.clamp(1, 30) * 1000;
+          return null;
+        }
         if (response.statusCode != HttpStatus.ok) return null;
         final bytes = <int>[];
         await for (final chunk in response) {
@@ -139,6 +188,8 @@ class DirectRoomDiscovery {
     cancelSearch();
     final server = _server;
     _server = null;
+    _limiter = null;
+    _retryAfter.clear();
     await server?.close(force: true);
   }
 }

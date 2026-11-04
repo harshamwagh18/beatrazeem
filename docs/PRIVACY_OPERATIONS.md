@@ -1,6 +1,6 @@
 # Beatrazeem privacy operations and release requirements
 
-Updated 3 November 2026 for version 0.9.3 (build 19). This document describes the current interface and the operator work that remains. It does not certify legal compliance. A displayed contact, a self-declared age or passing software tests do not establish effective request handling or verified parental consent.
+Updated 3 November 2026 for version 0.9.4 (build 20). This document describes the current interface and the operator work that remains. It does not certify legal compliance. A displayed contact, a self-declared age or passing software tests do not establish effective request handling or verified parental consent.
 
 ## Current release and responsibility
 

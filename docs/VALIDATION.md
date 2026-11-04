@@ -1,14 +1,12 @@
-# Validation — 4 November 2026, version 0.9.3 (build 19)
+# Validation — 4 November 2026, version 0.9.4 (build 20)
 
-This presentation update hides “Data on this phone” and the separate contact/deletion footer on the first-opening notice screen. Opening Privacy separately keeps those controls. Notice version `2026-11-04.1` is unchanged; existing acceptance and saved usernames remain valid.
+This release addresses BRZ-001 in the supplied audit. See [the audit response](SECURITY_AUDIT_REMEDIATION.md) for exact limits, source locations, skipped architectural changes and remaining exposure.
 
-## Checks completed for this update
+- **98 Flutter tests passed**, including eight new limiter/discovery security cases and the existing room, encryption, audio and UI regression suite. A first run exposed a test expectation mismatch: denial is a Dart StateError rather than Exception. Correcting the matcher confirmed the existing denial behavior; no admission bypass was observed.
+- **Static analysis: no issues.**
+- **Optimized ARM64 APK built successfully**, version 0.9.4 / 20, package com.beatrazeem.beatrazeem, minimum Android API 24, target API 35. App-audio capture/Karaoke still require Android 10+.
+- **APK signature verified** with the existing development certificate SHA-256 `56143b76408191b30c4ba1bab9f38a4c1a3972f6e8595865ac4d58681b572874`.
 
-- **15 targeted privacy and UI tests passed.** These cover first-opening footer visibility, the retained Privacy controls and data-copy action, Continue and saved consent, upgrade cases, failed saves, active-room withdrawal/deletion and broader UI behavior.
-- **Flutter static analysis: no issues.**
-- **Optimized ARM64 Android APK built successfully**, version 0.9.3 / 19, package com.beatrazeem.beatrazeem, minimum API 24 and target API 35. App-audio capture and Karaoke require Android 10+.
-- **APK signature verified** with the previous development certificate SHA-256 `56143b76408191b30c4ba1bab9f38a4c1a3972f6e8595865ac4d58681b572874`, allowing normal test-build updates. Release mode still uses development signing.
+Tests cover per-source and aggregate budgets, source rotation, backoff and recovery, bounded bookkeeping, normal eight-source admission, real loopback HTTP guessing across fresh connections, client Retry-After behavior and denied room access after successful discovery without host approval. Counters contain no guessed codes or persistent IP log.
 
-The full 90-test Flutter suite and Android lint (0 errors, 11 warnings) passed for 0.9.2. Earlier native timing, Karaoke and failed-write checks passed for 0.9.1. Those unchanged audio/storage components were not retested for this conditional UI change. No new physical-phone or acoustic synchronization claim is made.
-
-The terms and notice still describe an intended audience aged 9+, while the interface does not ask for or verify age. See [Privacy operations](PRIVACY_OPERATIONS.md) for the existing release requirements.
+No native audio scheduling code changed. Previously completed native checks were not repeated; this is not a new physical-phone acoustic or performance measurement. Flooding can still delay new joins, and HTTP rate limits do not conceal multicast room advertisements or prevent port scans/raw connection flooding. This focused remediation is not a complete audit of every dependency or app subsystem.
